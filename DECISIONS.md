@@ -194,3 +194,90 @@ dropped; the formula gives ₹-13,068.14.
 implements. The test asserts the profit composed from the §3 and §6.4 vectors
 rather than from the prose, so no new constant is introduced either way. Raised
 with the repository owner rather than coded around.
+
+---
+
+## D12 — The model returns spans; Python decides what they mean
+
+The extraction call asks the model for the *literal characters* the user typed
+("5 lakh", "9%", "₹6,000 a month") and nothing else. `chat/formatting.py`
+converts them. A model that answers "500000" to "5 lakh" is guessing correctly;
+one that answers "5000000" is guessing wrong in a way nothing downstream can
+detect, because both are plausible numbers.
+
+**Decision:** the model never supplies a value, only a span, and a span is
+dropped unless it is a verbatim fragment of the message (compared with
+whitespace, commas and the rupee sign squashed out). A span the parser refuses
+leaves the slot unfilled and gets asked again — cheap and recoverable — where a
+fabricated one is neither.
+
+Validation reuses `calculators.validation` rather than restating the rules at
+the slot, so a slot cannot accept a value the calculator would reject, and the
+two cannot drift.
+
+`parse_money` living beside `format_money` is deliberate: `formatting.py` owns
+the rupee-string boundary in *both* directions, which is why the parser and the
+formatter cannot disagree about what "5 lakh" is.
+
+---
+
+## D13 — A digression is not a state transition
+
+`TEST_VECTORS.md` C4 asks the bot to answer a question mid-flow and resume.
+The obvious implementation adds a state — `ANSWERING_QUESTION` — with edges
+back to wherever it came from, and every new conversational move then needs
+edges to and from every other.
+
+**Decision:** a digression is a *message the session answers*, not a place the
+session goes. `state`, `slots` and `pending_slot` are untouched; the answer is
+composed and the pending question re-posed from the state that was already
+there. The state machine has four states and no edge exists that could lose a
+half-filled form to a question about vocabulary.
+
+The same reasoning removes the correction branch entirely. Every inbound
+message goes through extraction in every state, so "actually make it 8%" is not
+a special case — it is an extraction that overwrites a slot that already had a
+value. C3 passes because no code path exists that could reset the flow, not
+because a branch was written to avoid it.
+
+Two consequences worth stating: a provider outage costs the turn, not the
+collected values; and a percentage withdrawal is re-resolved against the
+lumpsum whenever the lumpsum is corrected.
+
+---
+
+## D14 — One question per message is structural, not stylistic
+
+"Never emit two questions in one message" is the rule that separates a
+conversation from a form with a chat skin, and it is exactly the rule that
+erodes once a model is generating prose.
+
+**Decision:** the bot's questions come from `chat/prompts.py`, every message is
+assembled by `formatting.compose`, and `compose` raises if the question it is
+given does not contain exactly one question mark. Model prose is passed through
+`strip_questions` first, so a model that ignores the instruction not to ask
+anything cannot add a second one.
+
+The invariant is therefore enforced at the seam rather than requested in a
+prompt, and `test_no_message_ever_asks_more_than_one_question` walks a script
+that hits every re-ask path there is — start, digression, correction, refusal,
+unreadable answer, decline at confirmation, edit, and compute.
+
+---
+
+## D15 — What the presentation layer suppresses
+
+Two calculator results carry figures that are correct arithmetic and misleading
+advice. The chat layer, not the calculator, decides what a person sees.
+
+**Decision:** when `SwpProjection.depleted` is true, the negative final balance,
+the spec's `total_withdrawn` and the spec's `total_profit` are all withheld, and
+the message reports the depletion month and `actual_withdrawn` instead — per D6,
+those spec figures are unreliable in both directions once the corpus is dry.
+`EmiTooLowError` is presented with the minimum viable EMI rounded **up** and
+lands the session in `AWAITING_EDIT` with every other slot preserved: the inputs
+were individually legal, so the recovery is to revise one value, not to start
+over.
+
+Both are reversals of the usual instinct to show everything the function
+returned. The calculators still return all of it, and still test it.
