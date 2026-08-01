@@ -85,6 +85,23 @@ at 9%. The loan would never be repaid. You'd need an EMI above ₹3,604."*
 > L11 is the case nobody catches. A 0% interest loan is legitimate input and the
 > closed form degenerates. Handling it is a differentiator.
 
+### 1.3 Total paid and the final payment
+
+Because tenure is reported as `ceil(n)`, the last payment is **smaller** than a
+full EMI. `total_paid = months × EMI` therefore overstates the true cost.
+
+`final_payment` = outstanding balance after `months − 1` EMIs, grown one month.
+
+| # | months | **`final_payment`** | **`total_paid`** = (months−1)·E + final | naive `months × E` (**WRONG**) | overstated by |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| L1 | 63 | **2,245.296261** | **622,245.296261** | 630,000.00 | 7,754.70 |
+| L2 | 90 | **3,294.224396** | **1,338,294.224396** | 1,350,000.00 | 11,705.78 |
+| L3 | 69 | **581.814006** | **340,581.814006** | 345,000.00 | 4,418.19 |
+
+Assert at full precision, not the 2 dp quoted during review. Displaying
+`final_payment` is worth doing in its own right — "your last EMI is only
+₹2,245.30" is genuinely useful, and now independently verified.
+
 ---
 
 ## 2. SIP for a Target Amount
@@ -175,9 +192,31 @@ the user before computing.
 | W4 | 500,000 | 10 | 8.0 | 6,000 | −1,283.140528 | **month 120** |
 | W5 | 300,000 | 10 | 8.0 | 6,000 | −433,068.139982 | **month 61** |
 
-The closed form happily returns a **negative** final balance. Reported literally,
-W5 claims a "total profit" of ₹2,86,932 on a portfolio that ran dry in year five —
-arithmetically consistent, financially nonsense.
+The closed form happily returns a **negative** final balance, and once the balance
+goes negative it keeps compounding at `r` — so the reported FV drifts further from
+reality every month after depletion:
+
+| W5, month | closed-form balance |
+| ---: | ---: |
+| 60 | 3,130.52 |
+| **61** | **−2,849.34** ← corpus is dry here |
+| 70 | −58,429.46 |
+| 90 | −194,051.86 |
+| 120 | −433,068.14 |
+
+**The spec's profit figure is unreliable in both directions.** Applying
+`FV + W·n − P` to W5 gives **−13,068.139982** — a reported *loss*. But the corpus
+actually paid out ₹3,63,150.66 against ₹3,00,000 in, a real gain of
+**+63,150.662727**. The formula understates by ₹76,218.80, which is exactly the
+59 months of phantom compounding on a balance that no longer existed.
+
+> **The identity worth knowing:** `FV + W·n == actual_withdrawn` holds **exactly**
+> while the corpus is solvent, and breaks the moment it isn't. W4 depletes in the
+> final month (120), so it still holds there — spec profit and real gain are both
+> 218,716.859472. W5 depletes in month 61, and the two diverge by ₹76,218.80.
+>
+> So the spec formula is not wrong in general — it is right up to depletion and
+> arbitrarily wrong afterward. That framing is what belongs in `DECISIONS.md`.
 
 **Required behaviour:** detect `FV < 0`, and report *"your withdrawals exhaust the
 corpus in month 61 (year 6, month 1)"* instead of a negative balance. Determine
