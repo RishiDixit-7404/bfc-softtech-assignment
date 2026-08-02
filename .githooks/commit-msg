@@ -1,0 +1,18 @@
+#!/bin/sh
+# Reject tool-attribution trailers in commit messages.
+#
+# Every commit here is authored by the repository owner. Editors, compilers
+# and assistants do not sign commits, so no "Co-Authored-By", "Generated
+# with" or vendor footer belongs in one. This hook is the check rather than
+# the honour system.
+#
+# Enable it once per clone:
+#
+#     git config core.hooksPath .githooks
+#
+# The vendor names below are the pattern being blocked, not a trailer.
+if grep -iEq 'co-authored-by|assisted-by|generated with|claude|anthropic|🤖' "$1"; then
+  echo "commit-msg: tool attribution found in the commit message." >&2
+  echo "Commits end at the last line of the body. Remove the trailer." >&2
+  exit 1
+fi
