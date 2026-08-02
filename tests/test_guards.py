@@ -46,14 +46,57 @@ def test_G1_monthly_rate_is_defined_exactly_once():
     assert definitions == [Path("calculators/rates.py")]
 
 
-@pytest.mark.parametrize("pattern", [r"R/12\b", r"R/1200\b", r"/\s*12\s*\*"])
-def test_G2_no_naive_monthly_rate_in_calculators(pattern):
+# A named quantity divided by a year's worth of months. The leading
+# [A-Za-z_] is what separates the regression from the correct formula: the
+# naive rate divides a *variable* by 12, while (1 + R/100) ** (1 / 12) divides
+# the literal 1. Both spellings of the constant are covered because dividing
+# by _MONTHS_PER_YEAR is the same mistake wearing a better name.
+NAIVE_MONTHLY_RATE = re.compile(
+    r"[A-Za-z_]\w*\s*/\s*(?:12|1200)(?:\.0*)?\b"
+    r"|[A-Za-z_]\w*\s*/\s*_?(?:MONTHS_PER_YEAR|months_per_year)\b"
+)
+
+# Lines that must trip the guard. The first is the original R/12; the rest are
+# the spellings the original expression let through, since no variable named R
+# exists anywhere in calculators/.
+NAIVE_RATE_LINES = [
+    "    r = R/12",
+    "    r = annual_rate_pct / 12.0",
+    "    r = rate / 1200",
+    "    r = annual / 12",
+    "    r = annual_rate_pct / _MONTHS_PER_YEAR",
+]
+
+# Lines that must not. The first is the real formula from rates.py: it divides
+# by 12 too, and a guard that cannot tell the two apart is a guard nobody can
+# leave switched on.
+CORRECT_RATE_LINES = [
+    "    return (1.0 + rate / 100.0) ** (1.0 / _MONTHS_PER_YEAR) - 1.0",
+    "    return (1 + R/100) ** (1/12) - 1",
+    "    years, remainder = divmod(int(months), _MONTHS_PER_YEAR)",
+    "    months = round(period * _MONTHS_PER_YEAR)",
+    "    return float(months.group(1)) / _MONTHS_PER_YEAR",
+]
+
+
+@pytest.mark.parametrize("line", NAIVE_RATE_LINES)
+def test_G2_the_guard_catches_every_naive_spelling(line):
+    """The guard is only worth running if it fails on the thing it names."""
+    assert NAIVE_MONTHLY_RATE.search(line), line
+
+
+@pytest.mark.parametrize("line", CORRECT_RATE_LINES)
+def test_G2_the_guard_passes_the_effective_rate_formula(line):
+    assert NAIVE_MONTHLY_RATE.search(line) is None, line
+
+
+def test_G2_no_naive_monthly_rate_in_calculators():
     """The nominal-rate regression, caught at the source level."""
     offenders = [
         f"{path.relative_to(ROOT)}:{number}: {line.strip()}"
         for path in _source_files(CALCULATORS_DIR)
         for number, line in enumerate(path.read_text().splitlines(), start=1)
-        if re.search(pattern, line)
+        if NAIVE_MONTHLY_RATE.search(line)
     ]
 
     assert offenders == []
