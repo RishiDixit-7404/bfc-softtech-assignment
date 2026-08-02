@@ -102,6 +102,24 @@ def test_S5_period_outside_range_is_rejected(bad):
     assert exc.value.field == "investment period"
 
 
+@pytest.mark.parametrize("bad", [0.01, 0.04])
+def test_S5_a_period_shorter_than_one_month_is_rejected(bad):
+    """validate_years only rules out years <= 0, which leaves this gap.
+
+    swp_projection already refuses the same window. A plan holding zero
+    contributions is not a shorter plan, and splitting a target across 0.12
+    months is not an answer to any question a person asked.
+    """
+    with pytest.raises(InvalidPeriodError) as exc:
+        sip_for_target(1_000_000, 12.0, bad)
+    assert exc.value.field == "investment period"
+
+
+def test_S5_one_whole_month_is_the_shortest_accepted_period():
+    """1/12 of a year times 12 is 0.9999999999999999, which must round to 1."""
+    assert sip_for_target(1_000_000, 12.0, 1 / 12).months == 1
+
+
 @pytest.mark.parametrize("case", ZERO_RATE)
 def test_S6_zero_rate_degenerates_to_target_over_months(case):
     target, years, expected = ZERO_RATE[case]

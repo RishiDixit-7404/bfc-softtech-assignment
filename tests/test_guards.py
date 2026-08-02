@@ -177,6 +177,21 @@ def test_G5_no_result_field_is_nan_or_infinite(function, args):
             assert math.isfinite(value), f"{field.name} is {value}"
 
 
+@pytest.mark.parametrize("years, months", [(10 / 12, 10), (1.5, 18), (10, 120)])
+def test_G6_every_calculator_reads_a_period_as_the_same_number_of_months(
+    years, months
+):
+    """One reading of "10 months", or two calculators quietly disagree.
+
+    The chat layer converts every period to years, so 10 months arrives as
+    0.8333... and multiplying by 12 gives 9.999999999999998. Truncating that
+    to 9 in one calculator and rounding it to 10 in another is the kind of
+    difference nobody notices until the two are compared.
+    """
+    assert sip_for_target(1_000_000, 12.0, years).months == months
+    assert swp_projection(1_000_000, years, 12.0, 6_000).months == months
+
+
 def test_registry_parameters_match_the_function_signatures():
     """The chat layer fills slots by name; a rename here must not go unseen."""
     import inspect

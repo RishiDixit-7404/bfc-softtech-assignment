@@ -17,10 +17,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .errors import InvalidPeriodError
 from .rates import monthly_rate
 from .validation import validate_amount, validate_years
 
-_MONTHS_PER_YEAR = 12.0
+_MONTHS_PER_YEAR = 12
 
 
 @dataclass(frozen=True)
@@ -29,13 +30,16 @@ class SipPlan:
 
     Attributes:
         monthly_investment: The spec formula's answer — the graded number.
-        months: ``years * 12``.
+        months: ``round(years * 12)``. Rounded for the same reason
+            :func:`swp_projection` rounds: contributions are whole months, and
+            "10 months" arrives here as 0.8333… years, whose product with 12
+            is 9.999999999999998.
         total_invested: Nominal outlay, ``monthly_investment * months``.
         is_zero_rate: True on the R = 0 path, where the closed form degenerates.
     """
 
     monthly_investment: float
-    months: float
+    months: int
     total_invested: float
     monthly_rate: float
     is_zero_rate: bool
@@ -57,13 +61,23 @@ def sip_for_target(
     Raises:
         InvalidAmountError: target is non-numeric or <= 0.
         InvalidRateError: rate is non-numeric or outside 0-100.
-        InvalidPeriodError: years is non-numeric or outside 0 < years <= 100.
+        InvalidPeriodError: years is invalid, or shorter than one whole month.
     """
     amount = validate_amount(target, "target amount")
     period = validate_years(years, "investment period")
     r = monthly_rate(annual_rate_pct)
 
-    months = period * _MONTHS_PER_YEAR
+    months = round(period * _MONTHS_PER_YEAR)
+    if months < 1:
+        # validate_years only rules out years <= 0, which leaves periods too
+        # short to contain a single contribution. swp_projection refuses the
+        # same window; a plan of zero instalments is not a smaller plan.
+        raise InvalidPeriodError(
+            f"investment period must cover at least one month — "
+            f"{period:g} years does not.",
+            field="investment period",
+            value=period,
+        )
 
     if r == 0.0:
         # (1 + 0)^n - 1 is 0, so the closed form divides by zero. With no
