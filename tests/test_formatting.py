@@ -9,7 +9,7 @@ import pytest
 from chat.formatting import (
     compose,
     format_money,
-    format_money_ceil,
+    format_money_above,
     format_rate,
     format_tenure,
     format_years,
@@ -110,9 +110,14 @@ def test_format_money_uses_indian_grouping_to_two_decimals(amount, expected):
     assert format_money(amount) == expected
 
 
-def test_format_money_ceil_rounds_up_because_rounding_down_is_still_too_low():
+def test_format_money_above_clears_the_bound_it_is_given():
     """TEST_VECTORS.md L4: the minimum viable EMI on 5,00,000 at 9%."""
-    assert format_money_ceil(3_603.661658) == "₹3,604"
+    assert format_money_above(3_603.661658) == "₹3,604"
+
+
+def test_format_money_above_is_not_ceil_on_a_whole_rupee():
+    """The bound is exclusive, so ceil(3,603.00) = 3,603 would not repay it."""
+    assert format_money_above(3_603.0) == "₹3,604"
 
 
 @pytest.mark.parametrize(

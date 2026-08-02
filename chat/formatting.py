@@ -187,13 +187,15 @@ def format_money(amount: float) -> str:
     return f"{sign}₹{_group_indian(whole)}.{fraction}"
 
 
-def format_money_ceil(amount: float) -> str:
-    """Render a rupee amount rounded *up* to the whole rupee.
+def format_money_above(amount: float) -> str:
+    """The smallest whole rupee *strictly greater* than ``amount``.
 
-    Used for a minimum viable EMI: rounding down would print a target that is
-    still too low to repay the loan.
+    Used for a minimum viable EMI, where the bound is exclusive: an EMI equal
+    to the monthly interest holds the balance flat forever. ``ceil`` is not
+    the same thing - on an interest charge that lands exactly on a rupee it
+    returns that rupee, which is the one figure that does not work.
     """
-    return f"₹{_group_indian(str(math.ceil(amount)))}"
+    return f"₹{_group_indian(str(math.floor(amount) + 1))}"
 
 
 def format_rate(percent: float) -> str:
@@ -373,8 +375,10 @@ def render_error(error: CalculatorError) -> str:
             f"An EMI of {format_money(error.emi)} does not cover the monthly "
             f"interest of {format_money(error.monthly_interest)} on a loan of "
             f"{format_money(error.principal)}, so the balance would never fall "
-            f"and the loan would never be repaid. The EMI has to be above "
-            f"{format_money_ceil(error.minimum_emi)}."
+            f"and the loan would never be repaid. Anything above "
+            f"{format_money(error.minimum_emi)} clears it - "
+            f"{format_money_above(error.minimum_emi)} is the nearest whole "
+            f"rupee that does."
         )
 
     if isinstance(error, InvalidAmountError) and isinstance(error.value, (int, float)):

@@ -80,8 +80,9 @@ def loan_tenure(
             raise EmiTooLowError(
                 f"An EMI of {e:,.2f} does not cover the monthly interest of "
                 f"{monthly_interest:,.2f} on a loan of {p:,.2f}. The balance "
-                f"would never fall, so the loan is never repaid. The EMI has "
-                f"to be above {math.ceil(monthly_interest):,}.",
+                f"would never fall, so the loan is never repaid. The EMI must "
+                f"exceed {monthly_interest:,.2f}; the nearest whole rupee that "
+                f"does is {math.floor(monthly_interest) + 1:,}.",
                 principal=p,
                 emi=e,
                 monthly_interest=monthly_interest,

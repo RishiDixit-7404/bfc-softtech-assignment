@@ -515,7 +515,8 @@ def test_an_emi_below_the_interest_lands_in_editing_with_every_slot_kept():
 
     assert session.state is State.AWAITING_EDIT
     assert session.slots == {"principal": 500_000.0, "annual_rate_pct": 9.0, "emi": 3_000.0}
-    assert "₹3,604" in reply  # minimum viable EMI, rounded up
+    assert "₹3,603.66" in reply  # the exclusive bound, P*r
+    assert "₹3,604" in reply  # and a whole rupee that actually clears it
     assert "₹3,603.66" in reply  # the monthly interest itself
     assert questions(reply) == 1
 

@@ -89,9 +89,12 @@ class InfeasibleScenarioError(CalculatorError):
 class EmiTooLowError(InfeasibleScenarioError):
     """EMI does not exceed the monthly interest, so the loan is never repaid.
 
-    ``minimum_emi`` is ``P * r`` at full precision. The presentation layer
-    rounds it *up* before showing it: an EMI equal to the interest is still
-    too low, so rounding down would print an unpayable target.
+    ``minimum_emi`` is ``P * r`` at full precision, and the bound is
+    *exclusive* - an EMI equal to the interest holds the balance flat forever.
+    The presentation layer shows it alongside the smallest whole rupee above
+    it, which is ``floor + 1`` rather than ``ceil``: the two differ exactly
+    when the interest charge lands on a rupee, and there ``ceil`` returns the
+    one figure that does not work.
     """
 
     def __init__(

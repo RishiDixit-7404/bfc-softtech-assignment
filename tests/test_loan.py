@@ -111,8 +111,11 @@ def test_L4_L6_emi_below_monthly_interest_is_rejected(case):
     assert exc.value.monthly_interest == pytest.approx(minimum, abs=MONEY_TOLERANCE)
     assert exc.value.emi == e
     assert exc.value.principal == p
-    # The message must name the minimum viable EMI, rounded up.
-    assert f"{math.ceil(minimum):,}" in str(exc.value)
+    # The message must name the bound and a figure that actually clears it.
+    # The bound is exclusive, so that is floor(P*r) + 1 - not ceil(P*r), which
+    # returns the unpayable figure itself when the interest lands on a rupee.
+    assert f"{minimum:,.2f}" in str(exc.value)
+    assert f"{math.floor(minimum) + 1:,}" in str(exc.value)
 
 
 def test_L7_emi_exactly_equal_to_interest_is_rejected():

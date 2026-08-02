@@ -132,8 +132,15 @@ number either side of it.
 
 **Decision:** `EmiTooLowError`, a subclass of `InfeasibleScenarioError` rather
 than `ValidationError`, since every input was individually legal. It carries
-`minimum_emi = P·r` at full precision; the message states it rounded **up**,
-because rounding down would print a target that is still too low.
+`minimum_emi = P·r` at full precision.
+
+The message states the bound itself and, separately, the smallest whole rupee
+above it — "anything above ₹3,603.66 clears it; ₹3,604 is the nearest whole
+rupee that does". Saying only *"the EMI has to be above ₹3,604"* is false:
+₹3,604 is viable, and clears the loan in 1,292 months. The rounded figure
+exists to make the printed target payable, not to restate the bound. It is
+`floor + 1`, not `ceil`, because the two differ precisely when `P·r` lands on
+a whole rupee — and there `ceil` names the one EMI that does not work.
 
 ---
 
