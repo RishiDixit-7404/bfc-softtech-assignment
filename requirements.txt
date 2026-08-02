@@ -1,1 +1,7 @@
+# Runtime. Both providers speak HTTP through the standard library, so there is
+# no vendor SDK here and the test suite needs neither of these.
+fastapi==0.141.1
+uvicorn==0.52.1
+
+# Tests.
 pytest==9.1.1

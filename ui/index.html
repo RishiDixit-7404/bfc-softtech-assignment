@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finance chatbot</title>
+<style>
+  :root { color-scheme: light dark; --line: #d8d8d8; --bot: #f2f2f2; --me: #1f6feb; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    font: 16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
+  }
+  header {
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    font-weight: 600;
+  }
+  #log { flex: 1; overflow-y: auto; padding: 16px; }
+  .turn { max-width: 40rem; margin: 0 auto 12px; display: flex; }
+  .turn.me { justify-content: flex-end; }
+  .bubble {
+    padding: 10px 14px; border-radius: 14px; white-space: pre-wrap;
+    background: var(--bot); max-width: 85%;
+  }
+  .me .bubble { background: var(--me); color: #fff; }
+  form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .row { max-width: 40rem; margin: 0 auto; display: flex; gap: 8px; width: 100%; }
+  input, button { font: inherit; padding: 10px 14px; border-radius: 10px; }
+  input { flex: 1; border: 1px solid var(--line); background: transparent; color: inherit; }
+  button { border: 0; background: var(--me); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+</style>
+</head>
+<body>
+<header>Finance chatbot</header>
+<div id="log" aria-live="polite"></div>
+<form id="composer">
+  <div class="row">
+    <input id="message" autocomplete="off" placeholder="Ask about finance, or say &quot;loan tenure&quot;" autofocus>
+    <button id="send" type="submit">Send</button>
+  </div>
+</form>
+
+<script>
+  // Replies are inserted with textContent, never innerHTML: the bot echoes
+  // the user's own words back, and that is not a place to interpret markup.
+  const log = document.getElementById("log");
+  const form = document.getElementById("composer");
+  const input = document.getElementById("message");
+  const send = document.getElementById("send");
+  let sessionId = null;
+
+  function say(text, who) {
+    const turn = document.createElement("div");
+    turn.className = "turn " + who;
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = text;
+    turn.appendChild(bubble);
+    log.appendChild(turn);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function post(path, body) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    return response.json();
+  }
+
+  async function start() {
+    try {
+      const opened = await post("/session", {});
+      sessionId = opened.session_id;
+      say(opened.reply, "bot");
+    } catch (error) {
+      say("The server is not responding. Start it and reload this page.", "bot");
+    }
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const text = input.value.trim();
+    if (!text || !sessionId) return;
+
+    say(text, "me");
+    input.value = "";
+    send.disabled = true;
+    try {
+      const answered = await post("/chat", { session_id: sessionId, message: text });
+      say(answered.reply, "bot");
+    } catch (error) {
+      say("Something went wrong reaching the server. Try that again.", "bot");
+    } finally {
+      send.disabled = false;
+      input.focus();
+    }
+  });
+
+  start();
+</script>
+</body>
+</html>
