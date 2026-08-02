@@ -77,9 +77,13 @@ wrong number by a calculator whose whole job is that number.
 `total_paid = (months - 1) × emi + final_payment`.
 
 The `total_paid` figures were supplied by the repository owner at plan review
-and reproduced independently before use; `final_payment` is pinned by asserting
-the relationship above rather than by an invented literal, since
-`TEST_VECTORS.md` §1.1 carries no column for either yet.
+and reproduced independently before use.
+
+> **Superseded in part by D16.** The rest of this paragraph described pinning
+> `final_payment` by its relationship to `total_paid` rather than by a literal,
+> because `TEST_VECTORS.md` §1.1 carried no column for either. §1.3 now
+> publishes both at full precision and the tests assert them directly, so that
+> is no longer what the committed file does. The reasoning above is unchanged.
 
 ---
 
@@ -111,8 +115,9 @@ misclassify the failure. `SwpProjection` carries `depleted`, `depletion_month`
 (found by simulation, never by inverting the formula), and `actual_withdrawn`
 (full withdrawals up to depletion plus one final partial). The spec's
 `final_balance`, `total_withdrawn` and `total_profit` are still computed and
-returned exactly as specified; the presentation layer suppresses them in favour
-of the depletion report when `depleted` is true.
+returned exactly as specified; when `depleted` is true the presentation layer
+leads with the depletion report, suppresses the first and third, and prints
+`total_withdrawn` beside `actual_withdrawn` (D15, as amended by D23).
 
 Contrast D7: an EMI below the monthly interest *raises*, because there the
 answer does not exist at all.
@@ -193,7 +198,7 @@ Both were approved at plan review.
 
 ## D11 — `TEST_VECTORS.md` §3.3 prose vs the §3 formula
 
-§3 defines `total_profit = FV + total_withdrawn − P`. §3.3's narrative describes
+§3 defines `total_profit = FV + total_withdrawn − P`. §3.3's narrative described
 W5's profit as ₹2,86,932, which is `FV + total_withdrawn` with the `− P` term
 dropped; the formula gives ₹-13,068.14.
 
@@ -201,6 +206,13 @@ dropped; the formula gives ₹-13,068.14.
 implements. The test asserts the profit composed from the §3 and §6.4 vectors
 rather than from the prose, so no new constant is introduced either way. Raised
 with the repository owner rather than coded around.
+
+**Resolved.** The owner corrected §3.3 in `1d1b499` and, since a corrected
+section left this entry and `tests/test_swp.py` pointing at prose that no
+longer exists, added a correction notice recording the original figure. Both
+references read against the current file: the entry above is past tense about
+a narrative that was there, and the notice is what keeps it checkable. The
+code and the assertion are unaffected — the formula block never changed.
 
 ---
 
@@ -277,10 +289,15 @@ unreadable answer, decline at confirmation, edit, and compute.
 Two calculator results carry figures that are correct arithmetic and misleading
 advice. The chat layer, not the calculator, decides what a person sees.
 
-**Decision:** when `SwpProjection.depleted` is true, the negative final balance,
-the spec's `total_withdrawn` and the spec's `total_profit` are all withheld, and
-the message reports the depletion month and `actual_withdrawn` instead — per D6,
-those spec figures are unreliable in both directions once the corpus is dry.
+**Decision:** when `SwpProjection.depleted` is true, the negative final balance
+and the spec's `total_profit` are withheld, and the message reports the
+depletion month and `actual_withdrawn` instead — per D6, those figures are
+unreliable in both directions once the corpus is dry.
+
+> **Amended (see D23).** `total_withdrawn` was withheld here too, which went a
+> step too far: `W × n` is one of the three outputs `SPEC.md` names, and it is
+> not unreliable, only unfundable. It is now printed second and labelled as
+> such, behind the figure the corpus could actually pay.
 `EmiTooLowError` is presented with the minimum viable EMI rounded **up** and
 lands the session in `AWAITING_EDIT` with every other slot preserved: the inputs
 were individually legal, so the recovery is to revise one value, not to start
@@ -410,3 +427,71 @@ not skip validation of the *number*.
 
 The extraction prompt now also names the pending slot. That is a hint, not the
 mechanism — the override does not depend on the model taking it.
+
+---
+
+## D21 — A calculator change mid-flow is offered, never taken
+
+An external review found the one path that discarded state without saying so.
+A message classified as a *different* calculator went straight to `_begin`,
+which clears every slot. `"loan tenure, 5 lakh at 9%"` followed by `"by the way
+what is a SIP"` therefore lost both values with no acknowledgement — and the
+module docstring, the README and D13 all stated that no such path existed.
+
+The classifier is right often enough that the capability is worth keeping: it
+is also the only way out of a flow short of finishing it. But `"what is a SIP"`
+is a vocabulary question, and one classification is not enough evidence to
+throw away a half-filled form.
+
+**Decision:** a fifth state, `CONFIRMING_SWITCH`. The offer is made, `slots`
+and `pending_slot` are untouched while it stands, and `_PendingSwitch` records
+which state to restore on a no — so declining costs the turn and nothing else.
+Accepting reaches `_begin` with the message that triggered it, so `"make it a
+SIP for 10 lakh"` still fills what it carried. Answering the outstanding slot
+instead lets the offer lapse, because carrying on is an answer too.
+
+D13's claim now holds as stated, and a test asserts it structurally rather than
+by inspection: `self.slots = {}` appears exactly twice in `chat/session.py`,
+in `_begin` and in `_reset`. A third occurrence is how this got in.
+
+**What would change this:** a classifier good enough to separate "what is a
+SIP" from "let's do a SIP instead". The confirmation is a hedge against the
+model, not against the user.
+
+---
+
+## D22 — D12 addendum: half a number is not a verbatim span
+
+D12 refuses any span that is not a fragment of what the user typed. The check
+squashed whitespace, commas and the rupee sign out of both strings and then ran
+a substring test — which is what lets a model return `500000` for a message
+reading `5,00,000`. It also lets it return `5`.
+
+A model answering `{"principal": "5"}` to `"loan tenure for 5,00,000 at 9%"`
+was therefore taken at face value, and ₹5.00 became the loan amount. D12's own
+argument applies exactly: a truncated number is *worse* than a fabricated one,
+because ₹5.00 next to a five lakh loan reads as a typo rather than a bug.
+
+**Decision:** a match must have no digit hard against either end of it. `"5"`
+in `"500000"` has one and is refused; `"500000"`, `"5,00,000"` and `"9%"` are
+whole and are accepted. The rule is on the squashed strings, so the comma
+normalisation D12 wanted is unaffected.
+
+---
+
+## D23 — D15 amendment: the depleted plan still reports `W × n`
+
+`SPEC.md` names three SWP outputs — final balance, total withdrawn, total
+profit. D15 suppressed all three once the corpus ran dry. Two of those are
+right: the final balance is negative, and the profit figure is wrong in both
+directions (D6). The third was over-correction, and it left the submission with
+one place where a number the client asked for was simply not printed.
+
+`W × n` is not unreliable. It is exactly what it says — what the plan would
+have paid out — and the only problem with it is that the corpus cannot fund it.
+That is fixed by labelling and ordering, not by hiding.
+
+**Decision:** the depleted message reports `actual_withdrawn` first and
+`total_withdrawn` second, the latter named as the figure the formula reports
+and the corpus cannot fund. Suppression is now reserved for numbers that are
+misleading in themselves rather than merely in need of context.

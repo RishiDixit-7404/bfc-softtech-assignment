@@ -121,9 +121,11 @@ def test_W5_spec_profit_contradicts_what_the_saver_actually_received():
     numbers describe the same plan and they disagree in sign. That is what
     the depleted flag exists to stop reaching a user.
 
-    (TEST_VECTORS.md section 3.3 narrates this profit as ₹2,86,932, which is
-    FV + W*n with the - P dropped. The formula block in section 3 is taken as
-    authoritative; the discrepancy is raised rather than coded around.)
+    (An earlier revision of TEST_VECTORS.md section 3.3 narrated this profit
+    as ₹2,86,932, which is FV + W*n with the - P dropped. The formula block in
+    section 3 was taken as authoritative and the discrepancy raised rather
+    than coded around; the section now carries a correction notice recording
+    it. Nothing asserted below ever depended on the prose.)
     """
     result = swp_projection(300_000, 10, 8.0, 6_000)
 

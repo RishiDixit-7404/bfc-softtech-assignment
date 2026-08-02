@@ -72,6 +72,12 @@ conversion in Python, a span that is not a verbatim fragment of the message is
 dropped as invented, and range checks run through the calculators' own
 validators so a slot cannot accept a value the calculator would refuse.
 
+Half a number is not a verbatim fragment either. Commas are squashed out before
+the comparison — a model may return `500000` for `5,00,000` — which makes `5` a
+substring of the message too, so the check also requires that no digit sit hard
+against either end of the match. A truncated principal is the harder of the two
+mistakes to notice: `₹5.00` for a five lakh loan reads as a typo, not a bug.
+
 ---
 
 ## Architecture
@@ -99,12 +105,12 @@ that a chatbot exists.
 | --- | --- |
 | `calculators/rates.py` | `monthly_rate()`, defined exactly once in the repo |
 | `calculators/validation.py` | the amount/rate/period guards, shared so they cannot drift |
-| `chat/session.py` | the four-state machine: `IDLE`, `COLLECTING`, `CONFIRMING`, `AWAITING_EDIT` |
+| `chat/session.py` | the state machine: `IDLE`, `COLLECTING`, `CONFIRMING`, `AWAITING_EDIT`, `CONFIRMING_SWITCH` |
 | `chat/router.py` | every call made to a model — classify, extract, answer |
 | `chat/prompts.py` | every word the bot says or sends. Prompt text lives nowhere else |
 | `chat/formatting.py` | the number/text boundary, both directions |
 
-Three rules hold the conversation together, and they are what make it a state
+Four rules hold the conversation together, and they are what make it a state
 machine rather than a form in disguise:
 
 - **One question per message**, enforced structurally: questions come from
@@ -116,6 +122,12 @@ machine rather than a form in disguise:
 - **Every message goes through extraction, in every state**, so a correction is
   not a special case — it is an extraction that overwrites a filled slot. No
   code path exists that a correction could use to reset the flow.
+- **Nothing is discarded without a yes.** Naming a different calculator
+  mid-flow is the one move that would legitimately clear the slots, and
+  "by the way, what is a SIP" classifies as SIP often enough that acting on it
+  is a real loss. So it is offered: `CONFIRMING_SWITCH` holds the offer, every
+  value stays put while it stands, and a no restores the state it interrupted.
+  A test asserts at the source that only `_begin` and `_reset` clear `slots`.
 
 ---
 
@@ -128,7 +140,7 @@ limits* below). Both are providers the app ships with.
 
 ### 1. A general finance question
 
-*Gemini, `gemini-3.5-flash`*
+*Gemini, `gemini-flash-latest`*
 
 ```
 you: what is the difference between a SIP and a lumpsum investment
@@ -143,7 +155,7 @@ bot: A Systematic Investment Plan, or SIP, allows you to invest a fixed amount
 
 ### 2. Off topic, declined — and an attempt to override the instructions
 
-*Gemini, `gemini-3.5-flash`*
+*Gemini, `gemini-flash-latest`*
 
 ```
 you: what's the weather in Pune today
@@ -239,9 +251,10 @@ was captured there.
 
 | Case | Behaviour | Detail |
 | --- | --- | --- |
-| EMI ≤ monthly interest | `EmiTooLowError`. The bot names the minimum viable EMI **rounded up** (₹3,604 on a ₹5,00,000 loan at 9%) and keeps every other value, so one edit rescues the scenario | `DECISIONS.md` D7 |
+| EMI ≤ monthly interest | `EmiTooLowError`. The bot names the bound (₹3,603.66 on a ₹5,00,000 loan at 9%) **and** a whole rupee that clears it (₹3,604), keeping every other value so one edit rescues the scenario | `DECISIONS.md` D7 |
 | Boundary `E == P·r` | Rejected too — an EMI equal to the interest holds the balance flat forever | D7 |
-| SWP corpus runs dry | Depletion month found **by simulation**, never by inverting the formula. The negative balance and the spec's profit line are suppressed; `actual_withdrawn` is reported instead | D6, D15 |
+| SWP corpus runs dry | Depletion month found **by simulation**, never by inverting the formula. The negative balance and the spec's profit line are suppressed and `actual_withdrawn` is reported; the spec's `W × n` still appears beside it, labelled as the figure the corpus cannot fund | D6, D15 |
+| Calculator changed mid-flow | Offered, not taken. Every collected value is held until the switch is confirmed, and a no resumes the outstanding question | D21 |
 | `R = 0` loan | `log(1+0)` is 0, so the closed form divides by zero. Degenerates to `n = P/E` | D8 |
 | `R = 0` SIP | `(1+r)^n − 1` is 0. Degenerates to `Target / (n·12)` | D8 |
 | `R = 0` SWP | `((1+r)^n − 1)/r` is 0/0. Degenerates to `FV = P − W·n`, and profit is then exactly `0.0` for any input — asserted as an invariant | D8 |
@@ -249,6 +262,7 @@ was captured there.
 | Digression mid-flow | Answered, then the pending question is re-posed. State, slots and pending slot unchanged | D13 |
 | Injection attempt | Classified off-topic. The system prompt is never disclosed, and instructions inside user input are data | `chat/prompts.py` |
 | Unreadable value | Slot left unfilled and asked again. The model's number is never trusted over Python's | D12 |
+| Truncated span from the model | `"5"` out of `"5,00,000"` is refused on the same grounds as an outright fabrication | D12, D22 |
 | Withdrawal as a percentage | Resolved through the same function as the rupee path, and the resolved figure is echoed before computing | D5 |
 | Model down, slow, babbling, or unconfigured | Four distinct plain sentences. No traceback, no HTTP status, no provider JSON reaches the user, and no collected value is lost | D18 |
 
@@ -281,7 +295,7 @@ See `DECISIONS.md` D1.
 pytest -q
 ```
 
-305 tests, and they need **no API key, no network, and no environment
+350 tests, and they need **no API key, no network, and no environment
 variable** — the model is stubbed, so the whole suite runs from a fresh clone.
 CI runs it on push across Python 3.10 to 3.13.
 
@@ -293,10 +307,16 @@ What they cover:
   test proves the code matches the spec rather than that the expectations were
   fitted to the code.
 - The conversation fixtures C0–C8 in §5, driven through a stub model.
-- Structural guards: `monthly_rate` defined exactly once, no naive `R/12`
-  anywhere in `calculators/`, no import from `chat/` or `app` in `calculators/`,
-  every calculator failure a `CalculatorError`, and no result field ever `NaN`
-  or infinite.
+- Structural guards: `monthly_rate` defined exactly once; no named quantity
+  divided by 12, 1200 or a months-per-year constant anywhere in `calculators/`
+  — with cases proving both that the guard fires on `rate / 1200` and that it
+  leaves `rates.py`'s own `** (1 / 12)` alone, since a guard that cannot tell
+  those apart is a guard nobody leaves switched on; no import from `chat/` or
+  `app` in `calculators/`; every calculator failure a `CalculatorError`; and no
+  result field ever `NaN` or infinite.
+- The transport layer: session ids are unique, a reply reaches only its own
+  session, an unknown id is a 404, and the `StaticFiles` mount at `/` does not
+  shadow the two POST routes.
 - Both providers: request shape, per-task temperature, and every failure mode —
   timeout, refused connection, HTTP error, malformed body, blocked prompt.
 

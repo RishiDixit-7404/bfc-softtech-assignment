@@ -204,6 +204,12 @@ reality every month after depletion:
 | 90 | −194,051.86 |
 | 120 | −433,068.14 |
 
+> **Correction notice.** An earlier revision of this section narrated W5's profit
+> as ₹2,86,932 — `FV + W·n` with the `− P` term dropped. That was wrong and was
+> corrected in commit `1d1b499`. `DECISIONS.md` D11 and `tests/test_swp.py` refer
+> to that original error; this note is what keeps those references intelligible.
+> The correct figure is below.
+
 **The spec's profit figure is unreliable in both directions.** Applying
 `FV + W·n − P` to W5 gives **−13,068.139982** — a reported *loss*. But the corpus
 actually paid out ₹3,63,150.66 against ₹3,00,000 in, a real gain of
