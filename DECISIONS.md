@@ -253,6 +253,12 @@ composed and the pending question re-posed from the state that was already
 there. The state machine has four states and no edge exists that could lose a
 half-filled form to a question about vocabulary.
 
+> **Amended by D21.** There are five states: a message naming a *different*
+> calculator did reach an edge that cleared the slots, and closing it took a
+> `CONFIRMING_SWITCH` state that holds the offer until the user answers. The
+> claim above is what the code does now; it was not what the code did when
+> this entry was written.
+
 The same reasoning removes the correction branch entirely. Every inbound
 message goes through extraction in every state, so "actually make it 8%" is not
 a special case — it is an extraction that overwrites a slot that already had a
