@@ -590,11 +590,26 @@ def test_depletion_is_reported_and_the_negative_balance_is_suppressed():
 
     assert "month 61" in reply
     assert "year 6, month 1" in reply
-    assert "₹3,63,150.66" in reply  # actual_withdrawn, not W x n
+    assert "₹3,63,150.66" in reply  # actual_withdrawn
     assert "-₹" not in reply  # never show a negative balance
     assert "profit" not in reply.lower()  # nor the spec's profit line
     assert "₹4,33,068" not in reply
-    assert "₹7,20,000" not in reply  # nor withdrawals that never happened
+
+
+def test_a_depleted_plan_still_reports_the_spec_s_total_withdrawn():
+    """SPEC.md asks for W x n among the three SWP outputs, unconditionally.
+
+    Suppressing it is the one thing the negative balance and the profit line
+    do not justify: it is arithmetically what it says it is, and the reason
+    it misleads - that the corpus cannot fund it - is fixed by labelling it
+    and putting the fundable figure first, not by hiding it.
+    """
+    session, _ = swp_session("6,000")
+    reply = session.handle("yes")
+
+    assert "₹7,20,000.00" in reply  # W x n over the full 120 months
+    assert reply.index("₹3,63,150.66") < reply.index("₹7,20,000.00")
+    assert "cannot fund it" in reply
 
 
 # --------------------------------------------------------------------------

@@ -325,6 +325,12 @@ def render_swp(result: SwpProjection, lumpsum: float, withdrawal: float) -> str:
     When ``depleted`` is true the closed form's final balance is negative and
     its profit figure is unreliable in both directions, so neither is shown -
     the month the money runs out is the answer to the question actually asked.
+
+    ``total_withdrawn`` is still shown. The spec requires it, and unlike the
+    other two it is not misleading once it is labelled for what it is: the
+    plan's ``W x n``, next to the smaller figure the corpus could actually
+    fund. Withholding a number the spec asks for is a deviation; showing it
+    beside its correction is not.
     """
     if result.depleted:
         year, month = divmod(result.depletion_month - 1, _MONTHS_PER_YEAR)
@@ -336,8 +342,11 @@ def render_swp(result: SwpProjection, lumpsum: float, withdrawal: float) -> str:
                 f"- Actually withdrawn before it ran dry: "
                 f"{format_money(result.actual_withdrawn)}, the final month "
                 f"being a part withdrawal.",
-                "- The remaining months of the plan cannot be funded. Lower the "
-                "withdrawal, shorten the term, or start with more.",
+                f"- Total withdrawn if the plan had run its {result.months} "
+                f"months: {format_money(result.total_withdrawn)}. That is the "
+                f"figure the formula reports, and the corpus cannot fund it.",
+                "- To make the term reachable: lower the withdrawal, shorten "
+                "the plan, or start with more.",
             ]
         )
 
