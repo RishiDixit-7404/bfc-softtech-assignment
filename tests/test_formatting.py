@@ -6,6 +6,8 @@ are language, not finance - "5 lakh" is 500,000 by definition of the word.
 
 import pytest
 
+from calculators.errors import InvalidAmountError
+from calculators.validation import validate_amount
 from chat.formatting import (
     compose,
     format_money,
@@ -18,6 +20,7 @@ from chat.formatting import (
     parse_withdrawal,
     parse_years,
     parse_yes_no,
+    render_error,
     strip_questions,
 )
 
@@ -118,6 +121,30 @@ def test_format_money_above_clears_the_bound_it_is_given():
 def test_format_money_above_is_not_ceil_on_a_whole_rupee():
     """The bound is exclusive, so ceil(3,603.00) = 3,603 would not repay it."""
     assert format_money_above(3_603.0) == "₹3,604"
+
+
+def test_render_error_does_not_forbid_a_zero_the_validator_allows():
+    """A zero withdrawal is a valid pure-growth SWP, so only the sign is wrong.
+
+    Telling the user it "has to be more than zero" would contradict the rule
+    the calculator actually applied, and send them looking for a value that
+    was never required.
+    """
+    with pytest.raises(InvalidAmountError) as exc:
+        validate_amount(-500, "monthly withdrawal", allow_zero=True)
+
+    assert render_error(exc.value) == (
+        "The monthly withdrawal cannot be negative - I have -₹500.00."
+    )
+
+
+def test_render_error_does_forbid_zero_where_the_validator_forbids_it():
+    with pytest.raises(InvalidAmountError) as exc:
+        validate_amount(0, "loan amount")
+
+    assert render_error(exc.value) == (
+        "The loan amount has to be more than zero - I have ₹0.00."
+    )
 
 
 @pytest.mark.parametrize(

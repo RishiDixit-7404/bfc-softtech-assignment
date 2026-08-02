@@ -32,7 +32,13 @@ class ValidationError(CalculatorError):
 
 
 class InvalidAmountError(ValidationError):
-    """A money amount is missing, non-numeric, or outside its allowed range."""
+    """A money amount is missing, non-numeric, or outside its allowed range.
+
+    ``minimum_inclusive`` records which rule was applied, because the two
+    rules reject different things and the presentation layer must not tell a
+    user that zero is disallowed on a field where zero is fine. A zero SWP
+    withdrawal is a legitimate pure-growth projection.
+    """
 
     def __init__(
         self,
@@ -41,10 +47,12 @@ class InvalidAmountError(ValidationError):
         field: str,
         value: object,
         minimum: float | None = None,
+        minimum_inclusive: bool = False,
         maximum: float | None = None,
     ) -> None:
         super().__init__(message, field=field, value=value)
         self.minimum = minimum
+        self.minimum_inclusive = minimum_inclusive
         self.maximum = maximum
 
 

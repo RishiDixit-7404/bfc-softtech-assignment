@@ -47,7 +47,14 @@ def validate_amount(
     maximum_label: str | None = None,
 ) -> float:
     """Reject non-numeric, NaN/inf, and non-positive money amounts."""
-    amount = _coerce(value, field, InvalidAmountError, minimum=0.0, maximum=maximum)
+    amount = _coerce(
+        value,
+        field,
+        InvalidAmountError,
+        minimum=0.0,
+        minimum_inclusive=allow_zero,
+        maximum=maximum,
+    )
 
     if allow_zero and amount < 0.0:
         raise InvalidAmountError(
@@ -55,6 +62,7 @@ def validate_amount(
             field=field,
             value=amount,
             minimum=0.0,
+            minimum_inclusive=True,
         )
     if not allow_zero and amount <= 0.0:
         raise InvalidAmountError(

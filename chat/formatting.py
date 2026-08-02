@@ -388,6 +388,10 @@ def render_error(error: CalculatorError) -> str:
                 f"The {error.field} cannot be more than "
                 f"{format_money(error.maximum)} - I have {amount}."
             )
+        # Which rule was applied, not which one is usual: a zero withdrawal is
+        # a valid pure-growth SWP, so that field is never told to exceed zero.
+        if error.minimum_inclusive:
+            return f"The {error.field} cannot be negative - I have {amount}."
         return f"The {error.field} has to be more than zero - I have {amount}."
 
     return str(error)
