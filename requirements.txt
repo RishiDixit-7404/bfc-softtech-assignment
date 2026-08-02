@@ -1,7 +1,10 @@
 # Runtime. Both providers speak HTTP through the standard library, so there is
-# no vendor SDK here and the test suite needs neither of these.
+# no vendor SDK here and no LLM dependency of any kind.
 fastapi==0.141.1
 uvicorn==0.52.1
 
-# Tests.
+# Tests. httpx2 is what fastapi.testclient drives the app with in
+# tests/test_app.py. Nothing in the suite reaches the network or needs a key;
+# the calculator and chat tests import none of the three.
 pytest==9.1.1
+httpx2==2.9.1
