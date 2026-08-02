@@ -1,21 +1,33 @@
 """The slot-filling state machine.
 
-Four states, and the interesting design is in what does *not* move between
+Five states, and the interesting design is in what does *not* move between
 them:
 
-``IDLE``           nothing in flight
-``COLLECTING``     a calculator is chosen; ``pending_slot`` names the one value
-                   being asked for right now
-``CONFIRMING``     every slot is filled and echoed; waiting for a yes or no
-``AWAITING_EDIT``  the user said no, or the scenario turned out to be
-                   infeasible; waiting to hear which value to change
+``IDLE``               nothing in flight
+``COLLECTING``         a calculator is chosen; ``pending_slot`` names the one
+                       value being asked for right now
+``CONFIRMING``         every slot is filled and echoed; waiting for a yes or no
+``AWAITING_EDIT``      the user said no, or the scenario turned out to be
+                       infeasible; waiting to hear which value to change
+``CONFIRMING_SWITCH``  a different calculator was named mid-flow; waiting for a
+                       yes or no before anything is discarded
 
-Three rules hold the whole thing together.
+Four rules hold the whole thing together.
 
 **A digression is not a transition.** When the user asks what an EMI is in the
 middle of collecting one, the answer is composed and the pending question is
 re-posed. ``state``, ``slots`` and ``pending_slot`` are not touched. The
 digression is a message the session answers, not a place the session goes.
+
+**Nothing is discarded without a yes.** The one exception to the paragraph
+above is a mid-flow message the classifier reads as a *different* calculator.
+That is a genuine request often enough to honour, and a misread digression
+often enough - "by the way, what is a SIP" - that honouring it silently would
+throw a half-filled form away on the strength of one classification. So it is
+offered rather than taken: the session moves to ``CONFIRMING_SWITCH``, keeps
+every slot and the outstanding question, and declining puts it back exactly
+where it was. ``_begin`` is the only method that clears ``slots``, and after
+start-up the only way to reach it is a yes.
 
 **Every inbound message goes through extraction, in every state.** A correction
 is therefore not a special case with its own branch - it is an extraction that
@@ -79,6 +91,7 @@ class State(Enum):
     COLLECTING = "collecting"
     CONFIRMING = "confirming"
     AWAITING_EDIT = "awaiting_edit"
+    CONFIRMING_SWITCH = "confirming_switch"
 
 
 def _failure_copy(failure: LLMError) -> str:
@@ -109,6 +122,19 @@ class _Rejected(Exception):
         self.message = message
 
 
+@dataclass(frozen=True)
+class _PendingSwitch:
+    """A calculator change that has been offered and not yet answered.
+
+    ``resume_state`` is where the session goes back to on a no, which is why
+    declining costs nothing: the offer never moved anything but ``state``.
+    """
+
+    calculator_id: str
+    text: str
+    resume_state: State
+
+
 @dataclass
 class Session:
     """One conversation. Cheap to construct, holds no I/O of its own."""
@@ -119,6 +145,7 @@ class Session:
     slots: dict[str, float] = field(default_factory=dict)
     pending_slot: str | None = None
     withdrawal_percent: float | None = None
+    pending_switch: _PendingSwitch | None = None
 
     # ------------------------------------------------------------------
     # Public surface
@@ -182,6 +209,13 @@ class Session:
             if verdict is False:
                 return self._request_edit(prompts.EDIT_INTRO)
 
+        if self.state is State.CONFIRMING_SWITCH and self.pending_switch is not None:
+            verdict = parse_yes_no(text)
+            if verdict is True:
+                return self._take_switch()
+            if verdict is False:
+                return self._decline_switch()
+
         if self.state is State.AWAITING_EDIT:
             slot = self._match_slot(text)
             if slot is not None:
@@ -197,25 +231,77 @@ class Session:
 
         if route.intent is Intent.CALCULATION:
             if route.calculator_id and route.calculator_id != self.calculator_id:
-                # Asking for a *different* calculator is a new request, not a
-                # correction, and is the one in-flow path that starts over.
-                return self._begin(route.calculator_id, text)
+                return self._offer_switch(route.calculator_id, text)
             return self._resume()
 
         if route.intent is Intent.OFF_TOPIC:
             return self._resume(prompts.DECLINE_INLINE)
         return self._resume(answer(self.llm, text))
 
-    def _begin(self, calculator_id: str, text: str) -> str:
+    # ------------------------------------------------------------------
+    # Changing calculator mid-flow
+    # ------------------------------------------------------------------
+
+    def _offer_switch(self, calculator_id: str, text: str) -> str:
+        """Offer a different calculator. Discards nothing until it is accepted.
+
+        Starting it outright would throw away every collected value on the
+        strength of one classification, and "by the way, what is a SIP"
+        classifies as SIP often enough for that to be a real loss. Only
+        ``state`` moves; ``slots`` and ``pending_slot`` stay exactly as they
+        are, so a no costs the user nothing but the turn.
+
+        The triggering message is kept so that any values it carried - "let's
+        do a SIP for 10 lakh instead" - are still filled if the switch happens.
+        """
+        resume_state = (
+            self.pending_switch.resume_state
+            if self.pending_switch is not None
+            else self.state
+        )
+        self.pending_switch = _PendingSwitch(calculator_id, text, resume_state)
+        self.state = State.CONFIRMING_SWITCH
+
+        return compose(
+            prompts.switch_offer(self._spec.title), self._switch_question()
+        )
+
+    def _take_switch(self) -> str:
+        """The user said yes. This is the only in-flow path that clears slots."""
+        switch = self.pending_switch
+        assert switch is not None  # guarded by the caller
+        previous = self._spec.title
+
+        return self._begin(
+            switch.calculator_id,
+            switch.text,
+            prompts.switch_confirmed(
+                CALCULATORS[switch.calculator_id].title, previous
+            ),
+        )
+
+    def _decline_switch(self) -> str:
+        """The user said no. Put the state back and re-pose the same question."""
+        switch = self.pending_switch
+        assert switch is not None  # guarded by the caller
+        title = self._spec.title
+
+        self.pending_switch = None
+        self.state = switch.resume_state
+        return self._resume(prompts.switch_declined(title))
+
+    def _begin(self, calculator_id: str, text: str, prose: str = "") -> str:
         """Start a calculator and fill whatever the same message already gave."""
         self.calculator_id = calculator_id
         self.state = State.COLLECTING
         self.slots = {}
         self.pending_slot = None
         self.withdrawal_percent = None
+        self.pending_switch = None
 
         updates, rejections = self._absorb(text)
-        return self._advance(self._acknowledge(updates, rejections))
+        acknowledgement = self._acknowledge(updates, rejections)
+        return self._advance(" ".join(part for part in (prose, acknowledgement) if part))
 
     # ------------------------------------------------------------------
     # Slot filling
@@ -386,7 +472,12 @@ class Session:
     # ------------------------------------------------------------------
 
     def _advance(self, prefix: str = "") -> str:
-        """Ask for the next missing slot, or confirm if none are missing."""
+        """Ask for the next missing slot, or confirm if none are missing.
+
+        Any offered switch lapses here: a value landing in the calculator in
+        flight is the user carrying on with it.
+        """
+        self.pending_switch = None
         missing = [
             parameter.name
             for parameter in self._spec.parameters
@@ -418,6 +509,7 @@ class Session:
         """Hold every value and ask which one to change."""
         self.state = State.AWAITING_EDIT
         self.pending_slot = None
+        self.pending_switch = None
         return compose(prose, self._edit_question())
 
     def _compute(self) -> str:
@@ -476,6 +568,7 @@ class Session:
         self.slots = {}
         self.pending_slot = None
         self.withdrawal_percent = None
+        self.pending_switch = None
 
     # ------------------------------------------------------------------
     # Questions
@@ -492,6 +585,8 @@ class Session:
             return self._edit_question()
         if self.state is State.CONFIRMING:
             return self._confirmation()
+        if self.state is State.CONFIRMING_SWITCH:
+            return self._switch_question()
 
         if self.pending_slot is not None:
             return self._slot_question(self.pending_slot)
@@ -506,6 +601,13 @@ class Session:
 
     def _slot_question(self, slot: str) -> str:
         return prompts.SLOT_QUESTIONS[(self._spec.id, slot)]
+
+    def _switch_question(self) -> str:
+        if self.pending_switch is None:  # pragma: no cover - defensive
+            raise RuntimeError("no switch has been offered")
+        return prompts.switch_question(
+            CALCULATORS[self.pending_switch.calculator_id].title
+        )
 
     def _edit_question(self) -> str:
         return prompts.edit_question(

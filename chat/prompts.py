@@ -148,6 +148,17 @@ SLOT_ALIASES = {
 
 CONFIRM_PREAMBLE = "Here is what I have:"
 
+# Copy for the one move that would legitimately clear a half-filled form. It is
+# offered rather than taken, so only the third of these discards anything.
+_SWITCH_OFFER = (
+    "That is a different calculator - the {title} you started is still here, "
+    "with everything you have given me."
+)
+
+_SWITCH_DECLINED = "Staying with the {title} then."
+
+_SWITCH_CONFIRMED = "Switched to the {title}, and set the {previous} aside."
+
 DECLINE = (
     "That is outside what I can help with - I only cover personal finance. "
     "Shall we look at a loan, a SIP, or a withdrawal plan instead?"
@@ -200,14 +211,40 @@ ANYTHING_ELSE = "Anything else I can work out?"
 EDIT_INTRO = "No problem."
 
 
-def confirm_question(title: str) -> str:
-    """The single question that closes a confirmation echo.
+def _mid_sentence(title: str) -> str:
+    """A calculator title lower-cased to sit inside a sentence.
 
-    The title is lower-cased to sit inside the sentence, unless it opens with
-    an acronym - "SWP (systematic withdrawals)" must not become "swp".
+    Unless it opens with an acronym - "SWP (systematic withdrawals)" must not
+    become "swp".
     """
-    name = title if title[:2].isupper() else title[0].lower() + title[1:]
-    return f"Shall I run the {name} calculation with those?"
+    return title if title[:2].isupper() else title[0].lower() + title[1:]
+
+
+def confirm_question(title: str) -> str:
+    """The single question that closes a confirmation echo."""
+    return f"Shall I run the {_mid_sentence(title)} calculation with those?"
+
+
+def switch_question(title: str) -> str:
+    """Ask before a different calculator replaces the one in flight."""
+    return f"Shall I switch to the {_mid_sentence(title)} calculation instead?"
+
+
+def switch_offer(title: str) -> str:
+    """Say what is being held while the switch is decided."""
+    return _SWITCH_OFFER.format(title=_mid_sentence(title))
+
+
+def switch_declined(title: str) -> str:
+    """Acknowledge a no before the outstanding question is re-posed."""
+    return _SWITCH_DECLINED.format(title=_mid_sentence(title))
+
+
+def switch_confirmed(title: str, previous: str) -> str:
+    """Acknowledge a yes, naming what was set aside rather than doing it quietly."""
+    return _SWITCH_CONFIRMED.format(
+        title=_mid_sentence(title), previous=_mid_sentence(previous)
+    )
 
 
 def edit_question(labels: tuple[str, ...]) -> str:

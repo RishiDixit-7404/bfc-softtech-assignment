@@ -15,6 +15,7 @@ loan, W3 and W5 for the SWP.
 """
 
 import json
+import re
 
 import pytest
 
@@ -269,6 +270,114 @@ def test_C4_an_off_topic_aside_mid_flow_also_resumes():
     assert session.pending_slot == "principal"
     assert "only cover personal finance" in reply
     assert questions(reply) == 1
+
+
+# --------------------------------------------------------------------------
+# A different calculator named mid-flow
+# --------------------------------------------------------------------------
+
+
+def half_filled_loan():
+    """A loan with two slots filled and the EMI still outstanding."""
+    session, stub = loan_session(
+        spans={"loan tenure, 5 lakh at 9%": {"principal": "5 lakh", "annual_rate_pct": "9%"}}
+    )
+    session.handle("loan tenure, 5 lakh at 9%")
+    return session, stub
+
+
+def test_a_question_naming_another_calculator_discards_nothing():
+    """"what is a SIP" classifies as SIP. That must not cost a half-filled form."""
+    session, _ = half_filled_loan()
+
+    reply = session.handle("by the way what is a SIP")
+
+    assert session.slots == {"principal": 500_000.0, "annual_rate_pct": 9.0}
+    assert session.calculator_id == "loan_tenure"
+    assert session.pending_slot == "emi"
+    assert questions(reply) == 1
+
+
+def test_declining_the_switch_resumes_the_pending_slot_exactly():
+    session, _ = half_filled_loan()
+    session.handle("by the way what is a SIP")
+
+    reply = session.handle("no")
+
+    assert session.state is State.COLLECTING
+    assert session.pending_slot == "emi"
+    assert session.slots == {"principal": 500_000.0, "annual_rate_pct": 9.0}
+    assert reply.endswith("What monthly EMI do you plan to pay?")
+    assert questions(reply) == 1
+
+
+def test_declining_a_switch_offered_at_confirmation_returns_to_confirming():
+    session, stub, _reply = full_loan_flow()
+
+    session.handle("what about a SIP")
+    reply = session.handle("no")
+
+    assert session.state is State.CONFIRMING
+    assert "Here is what I have" in reply
+    assert questions(reply) == 1
+
+
+def test_accepting_the_switch_starts_the_other_calculator_and_says_so():
+    session, _ = half_filled_loan()
+    session.handle("I want a SIP instead")
+
+    reply = session.handle("yes")
+
+    assert session.calculator_id == "sip"
+    assert session.slots == {}
+    assert session.pending_slot == "target"
+    assert "Switched to" in reply
+    assert questions(reply) == 1
+
+
+def test_an_accepted_switch_keeps_the_values_its_message_carried():
+    session, stub = half_filled_loan()
+    stub.spans["make it a SIP for 10 lakh"] = {"target": "10 lakh"}
+    session.handle("make it a SIP for 10 lakh")
+
+    session.handle("yes")
+
+    assert session.calculator_id == "sip"
+    assert session.slots == {"target": 1_000_000.0}
+
+
+def test_answering_the_pending_slot_lets_an_offered_switch_lapse():
+    """Carrying on with the calculator in flight is an answer in itself."""
+    session, _ = half_filled_loan()
+    session.handle("by the way what is a SIP")
+
+    session.handle("10,000")
+
+    assert session.pending_switch is None
+    assert session.state is State.CONFIRMING
+    assert session.slots["emi"] == 10_000.0
+
+
+def test_only_begin_and_reset_clear_the_collected_slots():
+    """The docstring's claim, checked at the source rather than trusted.
+
+    Slots are cleared in exactly two places - starting a calculator and
+    finishing one - and a switch reaches the first of those only through a
+    yes. A third one appearing is how the digression bug got in.
+    """
+    import inspect
+
+    from chat import session as session_module
+
+    clears = re.compile(r"^\s*self\.slots\s*=\s*\{\}", re.MULTILINE)
+    owning = [
+        name
+        for name in ("_begin", "_reset")
+        if clears.search(inspect.getsource(getattr(Session, name)))
+    ]
+
+    assert owning == ["_begin", "_reset"]
+    assert len(clears.findall(inspect.getsource(session_module))) == 2
 
 
 # --------------------------------------------------------------------------
