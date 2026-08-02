@@ -281,3 +281,21 @@ over.
 
 Both are reversals of the usual instinct to show everything the function
 returned. The calculators still return all of it, and still test it.
+
+---
+
+## D16 — D4 addendum: §1.3 now publishes the figures D4 had to work around
+
+`TEST_VECTORS.md` §1.3 carries `final_payment` and `total_paid` at full
+precision for L1–L3. D4's closing paragraph — that §1.1 had no column for
+either, so `total_paid` was asserted at 1e-2 against 2 dp figures and
+`final_payment` was pinned only by its relationship to it — no longer applies.
+
+**Decision:** assert both published columns at `MONEY_TOLERANCE` (1e-4), the
+same tolerance as every other money assertion. The relationship
+`total_paid == (months - 1) * emi + final_payment` is kept alongside them: it
+now cross-checks two independently published values rather than standing in
+for a missing one.
+
+D4's reasoning is unchanged and stands. Only its note about the vectors is
+superseded.

@@ -1,7 +1,6 @@
-"""TEST_VECTORS.md sections 1 and 6.1 — loan tenure.
+"""TEST_VECTORS.md sections 1, 1.3 and 6.1 — loan tenure.
 
-Expected values are taken verbatim from TEST_VECTORS.md. The one exception is
-noted at TOTAL_PAID below.
+Every expected value is taken verbatim from TEST_VECTORS.md.
 """
 
 import math
@@ -26,12 +25,9 @@ VALID = {
     "L3": (250_000, 5_000, 12.0, 68.115878, 69, 5, 9),
 }
 
-# Supplied by the repository owner at plan review, not yet carried in
-# TEST_VECTORS.md (section 1.1 has no total_paid column). Quoted to 2 dp, so
-# these are asserted at 1e-2. Independently reproduced before use; the
-# relationship total_paid == (months - 1) * emi + final_payment is asserted
-# separately below so final_payment is pinned without inventing a literal.
-TOTAL_PAID = {"L1": 622_245.30, "L2": 1_338_294.22, "L3": 340_581.81}
+# TEST_VECTORS.md section 1.3: final_payment, total_paid.
+FINAL_PAYMENT = {"L1": 2_245.296261, "L2": 3_294.224396, "L3": 581.814006}
+TOTAL_PAID = {"L1": 622_245.296261, "L2": 1_338_294.224396, "L3": 340_581.814006}
 
 # TEST_VECTORS.md section 1.2: P, E, R, minimum viable EMI (P*r)
 EMI_TOO_LOW = {
@@ -72,7 +68,10 @@ def test_L1_L3_total_paid_accounts_for_a_partial_final_payment(case):
     p, e, r, _exact, months, _years, _remaining = VALID[case]
     result = loan_tenure(p, e, r)
 
-    assert result.total_paid == pytest.approx(TOTAL_PAID[case], abs=1e-2)
+    assert result.final_payment == pytest.approx(
+        FINAL_PAYMENT[case], abs=MONEY_TOLERANCE
+    )
+    assert result.total_paid == pytest.approx(TOTAL_PAID[case], abs=MONEY_TOLERANCE)
     assert result.total_paid == pytest.approx(
         (months - 1) * e + result.final_payment, abs=MONEY_TOLERANCE
     )
