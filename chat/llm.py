@@ -37,7 +37,13 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 
 GEMINI_KEY_ENV_VAR = "GEMINI_API_KEY"
 GEMINI_MODEL_ENV_VAR = "GEMINI_MODEL"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+# An alias rather than a pinned version, deliberately. Google retires pinned
+# models for new keys while still listing them — gemini-2.5-flash answers
+# ListModels and then 404s on generateContent with "no longer available to new
+# users", which is a confusing failure to hand someone cloning this months
+# from now. Determinism here comes from calculators/, not from the model, so
+# the alias costs nothing. Pin with GEMINI_MODEL if you want a fixed version.
+DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
 GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
@@ -71,6 +77,16 @@ class LLMMisconfiguredError(LLMUnavailableError):
     unreachable host may come back and retrying is sensible; an unset
     environment variable will not fix itself, and telling a user to try again
     wastes their time.
+    """
+
+
+class LLMQuotaError(LLMError):
+    """The provider was reached and refused: the request allowance is spent.
+
+    Its own class because it is the failure a free key hits first — Gemini's
+    free tier allows 20 generate requests per day, which is roughly seven
+    turns of conversation — and because "could not reach the model" would be
+    a lie about what happened and about when it will work again.
     """
 
 
@@ -166,9 +182,7 @@ def post_json(
     except socket.timeout as timed_out:
         raise LLMTimeoutError(f"no reply within {timeout:g}s") from timed_out
     except urllib.error.HTTPError as http_error:
-        raise LLMResponseError(
-            f"the provider returned HTTP {http_error.code}"
-        ) from http_error
+        raise _from_status(http_error.code, _error_detail(http_error)) from http_error
     except urllib.error.URLError as url_error:
         if isinstance(url_error.reason, (socket.timeout, TimeoutError)):
             raise LLMTimeoutError(f"no reply within {timeout:g}s") from url_error
@@ -188,6 +202,47 @@ def post_json(
     if not isinstance(decoded, dict):
         raise LLMResponseError("the provider's reply was not a JSON object")
     return decoded
+
+
+def _error_detail(http_error: urllib.error.HTTPError) -> str:
+    """The provider's own explanation, for the operator reading the log.
+
+    Discarding this was a mistake worth naming: an unusable model name reached
+    the operator as a bare "HTTP 404" and took a hand-written script to
+    diagnose. The detail goes in the *exception*, never in the reply — the
+    user still sees one plain sentence from ``chat/prompts.py``.
+    """
+    try:
+        body = http_error.read().decode("utf-8", "replace")
+    except Exception:  # pragma: no cover - body already consumed or absent
+        return "no detail"
+
+    try:
+        message = json.loads(body)["error"]["message"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return body[:200].strip() or "no detail"
+    return str(message)[:300]
+
+
+def _from_status(code: int, detail: str) -> LLMError:
+    """Map an HTTP status to the failure the user needs to hear about.
+
+    A rejected key and an unknown model are configuration mistakes that
+    retrying cannot fix; a quota or a 5xx is worth trying again later. Sorting
+    them here is what lets the four sentences in ``prompts.py`` stay true.
+    """
+    if code in (401, 403):
+        return LLMMisconfiguredError(f"the provider rejected the key: {detail}")
+    if code == 404:
+        return LLMMisconfiguredError(
+            f"the provider has no such model, or it is not available to this "
+            f"key: {detail}"
+        )
+    if code == 429:
+        return LLMQuotaError(f"the request allowance is spent: {detail}")
+    if code >= 500:
+        return LLMUnavailableError(f"the provider is unavailable (HTTP {code}): {detail}")
+    return LLMResponseError(f"the provider returned HTTP {code}: {detail}")
 
 
 def _timeout_from_env() -> float:

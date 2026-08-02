@@ -5,6 +5,7 @@ so replacing that one function exercises the whole request-building and
 reply-reading path without a network, a key, or a running Ollama.
 """
 
+import io
 import json
 import socket
 import urllib.error
@@ -15,6 +16,7 @@ from chat import llm, prompts
 from chat.llm import (
     GeminiLLM,
     LLMMisconfiguredError,
+    LLMQuotaError,
     LLMResponseError,
     LLMTimeoutError,
     LLMUnavailableError,
@@ -202,14 +204,75 @@ def test_a_refused_connection_reads_as_unavailable(monkeypatch):
         llm.post_json("http://localhost:11434", {}, {}, timeout=2)
 
 
-@pytest.mark.parametrize("status", [401, 403, 429, 500])
-def test_an_http_error_status_reads_as_a_response_error(monkeypatch, status):
-    error = urllib.error.HTTPError("http://x", status, "no", {}, None)
-    monkeypatch.setattr(llm.urllib.request, "urlopen", _urlopen_raising(error))
+def _http_error(status, body=b""):
+    return urllib.error.HTTPError("http://x", status, "no", {}, io.BytesIO(body))
 
-    with pytest.raises(LLMResponseError) as raised:
+
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        (401, LLMMisconfiguredError),  # bad key - retrying cannot help
+        (403, LLMMisconfiguredError),
+        (404, LLMMisconfiguredError),  # unusable model name, same class of fix
+        (429, LLMQuotaError),  # allowance spent - resets, so say so
+        (500, LLMUnavailableError),
+        (503, LLMUnavailableError),
+        (400, LLMResponseError),  # a malformed request from us
+    ],
+)
+def test_each_http_status_maps_to_the_failure_it_actually_is(
+    monkeypatch, status, expected
+):
+    monkeypatch.setattr(
+        llm.urllib.request, "urlopen", _urlopen_raising(_http_error(status))
+    )
+    with pytest.raises(expected):
         llm.post_json("http://x", {}, {}, timeout=2)
-    assert str(status) in str(raised.value)
+
+
+def test_a_quota_error_is_not_reported_as_a_configuration_mistake(monkeypatch):
+    """Telling a user to fix their config when the key is fine wastes their day."""
+    monkeypatch.setattr(
+        llm.urllib.request, "urlopen", _urlopen_raising(_http_error(429))
+    )
+    with pytest.raises(LLMQuotaError) as raised:
+        llm.post_json("http://x", {}, {}, timeout=2)
+    assert not isinstance(raised.value, LLMMisconfiguredError)
+
+
+def test_a_spent_allowance_does_not_claim_the_model_was_unreachable():
+    """Observed against the live free tier: 20 requests a day, then 429."""
+    session = Session(llm=_BrokenLLM(LLMQuotaError("allowance spent")))
+    reply = session.handle("what is a mutual fund")
+
+    assert prompts.LLM_QUOTA in reply
+    assert prompts.LLM_UNAVAILABLE not in reply
+    assert "resets daily" in reply
+
+
+def test_the_provider_explanation_reaches_the_operator(monkeypatch):
+    """A bare "HTTP 404" cost a hand-written script to diagnose once."""
+    body = json.dumps(
+        {"error": {"message": "This model models/gemini-2.5-flash is no longer available to new users."}}
+    ).encode()
+    monkeypatch.setattr(
+        llm.urllib.request, "urlopen", _urlopen_raising(_http_error(404, body))
+    )
+
+    with pytest.raises(LLMMisconfiguredError) as raised:
+        llm.post_json("http://x", {}, {}, timeout=2)
+    assert "no longer available to new users" in str(raised.value)
+
+
+def test_a_non_json_error_body_still_yields_something_readable(monkeypatch):
+    monkeypatch.setattr(
+        llm.urllib.request,
+        "urlopen",
+        _urlopen_raising(_http_error(500, b"<html>gateway blew up</html>")),
+    )
+    with pytest.raises(LLMUnavailableError) as raised:
+        llm.post_json("http://x", {}, {}, timeout=2)
+    assert "gateway blew up" in str(raised.value)
 
 
 @pytest.mark.parametrize("body", [b"not json at all", b"[1, 2, 3]"])
@@ -297,6 +360,7 @@ class _BrokenLLM:
     "error,expected",
     [
         (LLMTimeoutError("slow"), prompts.LLM_TIMEOUT),
+        (LLMQuotaError("spent"), prompts.LLM_QUOTA),
         (LLMResponseError("garbage"), prompts.LLM_MALFORMED),
         (LLMUnavailableError("host down"), prompts.LLM_UNAVAILABLE),
         (LLMMisconfiguredError("GEMINI_API_KEY is not set"), prompts.LLM_MISCONFIGURED),
@@ -334,6 +398,7 @@ def test_an_unconfigured_server_still_starts_and_explains_itself(monkeypatch):
     "error",
     [
         LLMTimeoutError("slow"),
+        LLMQuotaError("spent"),
         LLMResponseError("garbage"),
         LLMUnavailableError("x"),
         LLMMisconfiguredError("GEMINI_API_KEY is not set"),

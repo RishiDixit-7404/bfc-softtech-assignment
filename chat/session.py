@@ -65,6 +65,7 @@ from .llm import (
     LLM,
     LLMError,
     LLMMisconfiguredError,
+    LLMQuotaError,
     LLMResponseError,
     LLMTimeoutError,
 )
@@ -83,10 +84,14 @@ class State(Enum):
 def _failure_copy(failure: LLMError) -> str:
     """Which sentence a provider failure earns.
 
-    Three distinct causes, three distinct messages: a user who sees "took too
-    long" knows to try again, and one who sees "could not reach" knows not to
-    bother until something changes. The exception itself never reaches them.
+    Five causes, five messages, because the right next move differs in each:
+    "took too long" invites a retry, "allowance used up" says wait until
+    tomorrow, and "no model configured" says stop trying and fix the setup.
+    Collapsing them would send someone in the wrong direction. The exception
+    itself never reaches them.
     """
+    if isinstance(failure, LLMQuotaError):
+        return prompts.LLM_QUOTA
     if isinstance(failure, LLMTimeoutError):
         return prompts.LLM_TIMEOUT
     if isinstance(failure, LLMResponseError):

@@ -336,3 +336,43 @@ A missing key is caught when the provider is *built*, before any request is
 made, and `get_llm_or_unconfigured` turns it into a placeholder that fails on
 use. The server still starts, the page still loads, and the greeting still
 lists the calculators: a configuration mistake should not look like a crash.
+
+---
+
+## D19 — What the live Gemini run changed
+
+Running the conversation against the real endpoint found three things the
+Ollama stand-in could not.
+
+**The pinned default model was already retired.** `gemini-2.5-flash` answers
+ListModels and then 404s on generateContent with "no longer available to new
+users" — a key issued today cannot call it. The default is now
+`gemini-flash-latest`, an alias, because a submission cloned months from now
+should not fail on a model rotation. `GEMINI_MODEL` pins a version for anyone
+who wants reproducibility over longevity.
+
+**HTTP status was collapsed into one failure.** Every non-2xx became
+`LLMResponseError`, so a retired model, a rejected key, and a spent quota all
+reached the user as "the model sent back something I could not make sense of".
+They are now sorted: 401/403/404 are configuration mistakes, 429 is a spent
+allowance, 5xx is transient, everything else is a bad reply.
+
+**The provider's own explanation was thrown away.** `post_json` discarded the
+error body, so the 404 above arrived as a bare "HTTP 404" and took a
+hand-written script to diagnose. The body now goes into the exception — where
+an operator reading logs can see it — and never into the reply.
+
+**Free-tier quota is the failure users will actually hit.** The limit is 20
+generate requests per day per model, and this bot spends one to three per turn,
+so roughly seven turns exhausts a free key. That earned `LLMQuotaError` its own
+class and its own sentence: the model was reached and refused, it resets
+tomorrow, and telling someone "I could not reach the model" would be wrong
+about both.
+
+**What held up:** the router parsed every real reply correctly, including the
+```` ```json ```` fences Gemini wraps extraction in and which the stand-in never
+produced. Classification returned bare labels throughout. Latency was 1.2-3.9s
+per call. And when the quota ran out mid-walkthrough, the deterministic
+fallback kept filling slots from the raw message and computed the correct
+tenure anyway — the resilience in D13 doing exactly what it was built for,
+under a failure that was not simulated.

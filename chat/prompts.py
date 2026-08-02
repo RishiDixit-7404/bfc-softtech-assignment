@@ -175,6 +175,12 @@ LLM_MISCONFIGURED = (
     "again will not help. Nothing you have told me so far is lost."
 )
 
+LLM_QUOTA = (
+    "The language model's request allowance for today has been used up, so I "
+    "could not read that message. A free key resets daily. Nothing you have "
+    "told me so far is lost."
+)
+
 LLM_TIMEOUT = (
     "The language model took too long to answer, so I could not read that "
     "message. Nothing you have told me so far is lost."
