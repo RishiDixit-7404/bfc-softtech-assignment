@@ -61,7 +61,13 @@ from .formatting import (
     render_sip,
     render_swp,
 )
-from .llm import LLM, LLMError
+from .llm import (
+    LLM,
+    LLMError,
+    LLMMisconfiguredError,
+    LLMResponseError,
+    LLMTimeoutError,
+)
 from .router import Intent, answer, classify, extract_spans
 
 
@@ -72,6 +78,22 @@ class State(Enum):
     COLLECTING = "collecting"
     CONFIRMING = "confirming"
     AWAITING_EDIT = "awaiting_edit"
+
+
+def _failure_copy(failure: LLMError) -> str:
+    """Which sentence a provider failure earns.
+
+    Three distinct causes, three distinct messages: a user who sees "took too
+    long" knows to try again, and one who sees "could not reach" knows not to
+    bother until something changes. The exception itself never reaches them.
+    """
+    if isinstance(failure, LLMTimeoutError):
+        return prompts.LLM_TIMEOUT
+    if isinstance(failure, LLMResponseError):
+        return prompts.LLM_MALFORMED
+    if isinstance(failure, LLMMisconfiguredError):
+        return prompts.LLM_MISCONFIGURED
+    return prompts.LLM_UNAVAILABLE
 
 
 class _Rejected(Exception):
@@ -118,10 +140,9 @@ class Session:
 
         try:
             return self._turn(text)
-        except LLMError:
-            if self.state is State.IDLE:
-                return prompts.LLM_UNAVAILABLE
-            return self._resume(prompts.LLM_UNAVAILABLE)
+        except LLMError as failure:
+            copy = _failure_copy(failure)
+            return copy if self.state is State.IDLE else self._resume(copy)
 
     # ------------------------------------------------------------------
     # Turn handling

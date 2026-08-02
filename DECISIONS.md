@@ -299,3 +299,40 @@ for a missing one.
 
 D4's reasoning is unchanged and stands. Only its note about the vectors is
 superseded.
+
+---
+
+## D17 — Both providers speak HTTP through the standard library
+
+Gemini and Ollama each expose a JSON endpoint that this app uses for exactly
+one thing: send a system prompt and a user prompt, get text back. The vendor
+SDK adds a dependency, a version to track, and a layer between the request and
+the reviewer.
+
+**Decision:** `urllib.request` for both, through a single `post_json` seam that
+owns the timeout and every transport failure. `requirements.txt` therefore
+carries no LLM dependency at all, and the tests replace one function rather
+than mocking an SDK.
+
+**What would change this:** streaming responses, or tool-calling through the
+provider's own schema. Neither is in scope; both would justify the SDK.
+
+---
+
+## D18 — Four failure modes, four sentences
+
+`LLMError` splits into misconfigured, unavailable, timeout, and malformed. The
+split exists because the *user-facing* copy differs, not because the code paths
+do — "the model took too long" invites a retry, and "no model is configured"
+must not, since retrying will never fix it. Collapsing them into one message
+would tell a user to keep trying something that cannot work.
+
+**Decision:** the exception carries the cause, `chat/prompts.py` carries the
+four sentences, and `Session._failure_copy` maps between them. Provider detail —
+exception text, HTTP status, traceback — never reaches a user; a test asserts
+that for every one of the four.
+
+A missing key is caught when the provider is *built*, before any request is
+made, and `get_llm_or_unconfigured` turns it into a placeholder that fails on
+use. The server still starts, the page still loads, and the greeting still
+lists the calculators: a configuration mistake should not look like a crash.

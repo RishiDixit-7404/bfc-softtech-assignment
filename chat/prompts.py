@@ -161,9 +161,28 @@ DECLINE_INLINE = (
 
 NO_ANSWER = "I do not have a good answer to that one."
 
+# One sentence for what went wrong, one for what it cost - which is never the
+# values already collected. None of them carries a question: the state machine
+# appends its own.
 LLM_UNAVAILABLE = (
-    "I could not reach the language model just now, so I cannot read that "
+    "I could not reach the language model just now, so I could not read that "
     "message. Nothing you have told me so far is lost."
+)
+
+LLM_MISCONFIGURED = (
+    "This chatbot has not been given a language model to use yet, so I cannot "
+    "read that message. Whoever is running it needs to set that up - trying "
+    "again will not help. Nothing you have told me so far is lost."
+)
+
+LLM_TIMEOUT = (
+    "The language model took too long to answer, so I could not read that "
+    "message. Nothing you have told me so far is lost."
+)
+
+LLM_MALFORMED = (
+    "The language model sent back something I could not make sense of, so I "
+    "could not read that message. Nothing you have told me so far is lost."
 )
 
 REJECTED_SPAN = "I could not read {label} from '{span}'."
