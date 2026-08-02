@@ -91,7 +91,11 @@ def _first_label(reply: str) -> str:
 
 
 def extract_spans(
-    llm: LLM, spec: CalculatorSpec, message: str, known: tuple[str, ...] = ()
+    llm: LLM,
+    spec: CalculatorSpec,
+    message: str,
+    known: tuple[str, ...] = (),
+    pending: str | None = None,
 ) -> dict[str, str]:
     """Pull the literal spans that look like values for ``spec``'s slots.
 
@@ -101,6 +105,10 @@ def extract_spans(
         message: The user's message, verbatim.
         known: Slots already filled, so the model can be told what a value in
             this message would be *correcting*.
+        pending: The slot the user was just asked for. Naming it makes a bare
+            answer far less likely to be filed under the wrong slot — though
+            the caller does not rely on that, and overrides it outright when
+            the message is nothing but a value.
 
     Returns:
         Slot name to the exact text the user wrote. Slots the model invented,
@@ -116,6 +124,7 @@ def extract_spans(
         for parameter in spec.parameters
     )
     known_line = f"Already collected: {', '.join(known)}\n\n" if known else ""
+    pending_line = f"The user was just asked for: {pending}\n\n" if pending else ""
 
     try:
         reply = llm.generate(
@@ -124,6 +133,7 @@ def extract_spans(
                 title=spec.title,
                 slots=slot_lines,
                 known=known_line,
+                pending=pending_line,
                 message=message,
             ),
             task="extract",

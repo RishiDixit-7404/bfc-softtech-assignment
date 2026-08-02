@@ -231,13 +231,23 @@ class Session:
             spans that could not be used.
         """
         spec = self._spec
-        spans = extract_spans(self.llm, spec, text, tuple(self.slots))
+        spans = extract_spans(
+            self.llm, spec, text, tuple(self.slots), self.pending_slot
+        )
 
-        # No spans and a question outstanding: the message may simply *be* the
-        # answer ("8.5"). Read it as one, and if it does not parse say nothing
-        # - the message is then handled as whatever it actually was.
         guessing = False
-        if not spans and self.pending_slot is not None:
+        if self.pending_slot is not None and self._is_bare_value(text):
+            # The message is nothing but a value, and we know which question
+            # it answers: the one just asked. Observed against a live model
+            # filing "10,000" under `principal` while the pending slot was
+            # `emi` — which silently overwrote the loan amount and left the
+            # EMI empty. D12 refuses the model's numbers; a slot assignment
+            # is no more trustworthy, and here Python knows better.
+            spans = {self.pending_slot: text}
+        elif not spans and self.pending_slot is not None:
+            # Nothing extracted, but a question is outstanding: the message may
+            # still be the answer. Read it as one, and if it does not parse say
+            # nothing - it is then handled as whatever it actually was.
             spans = {self.pending_slot: text}
             guessing = True
 
@@ -287,6 +297,27 @@ class Session:
         self.slots[parameter.name] = value
         updates[parameter.name] = (previous, value)
 
+    @staticmethod
+    def _parse_for(parameter: Parameter, span: str) -> object | None:
+        """Parse a span according to a parameter's kind. No validation here."""
+        if parameter.kind == "rate":
+            return parse_rate(span)
+        if parameter.kind == "years":
+            return parse_years(span)
+        if parameter.kind == "money_or_percent":
+            return parse_withdrawal(span)
+        return parse_money(span)
+
+    def _is_bare_value(self, text: str) -> bool:
+        """True when the whole message is just a value for the pending slot.
+
+        "10,000" is; "make the loan 10,000" is not, and neither is "actually
+        make it 9%" while an EMI is pending - those carry a slot of their own
+        and are left to the extractor.
+        """
+        parameter = self._parameter(self.pending_slot)
+        return parameter is not None and self._parse_for(parameter, text) is not None
+
     def _read(self, parameter: Parameter, span: str) -> float | None:
         """Turn one span into a validated value for ``parameter``.
 
@@ -294,27 +325,19 @@ class Session:
         the lumpsum is known: the percentage is remembered and resolved as
         soon as there is a lumpsum to apply it to.
         """
-        if parameter.kind == "rate":
-            rate = parse_rate(span)
-            if rate is None:
-                raise _Rejected(self._unreadable(parameter, span))
-            return validate_rate(rate, parameter.label)
-
-        if parameter.kind == "years":
-            years = parse_years(span)
-            if years is None:
-                raise _Rejected(self._unreadable(parameter, span))
-            return validate_years(years, parameter.label)
-
-        if parameter.kind == "money_or_percent":
-            return self._read_withdrawal(parameter, span)
-
-        amount = parse_money(span)
-        if amount is None:
+        parsed = self._parse_for(parameter, span)
+        if parsed is None:
             raise _Rejected(self._unreadable(parameter, span))
-        return validate_amount(amount, parameter.label)
 
-    def _read_withdrawal(self, parameter: Parameter, span: str) -> float | None:
+        if parameter.kind == "rate":
+            return validate_rate(parsed, parameter.label)
+        if parameter.kind == "years":
+            return validate_years(parsed, parameter.label)
+        if parameter.kind == "money_or_percent":
+            return self._read_withdrawal(parameter, parsed)
+        return validate_amount(parsed, parameter.label)
+
+    def _read_withdrawal(self, parameter: Parameter, reading: tuple) -> float | None:
         """Accept an SWP withdrawal as rupees or as a percent of the lumpsum.
 
         The percentage is resolved through ``calculators.resolve_withdrawal``
@@ -322,10 +345,6 @@ class Session:
         rupee figure is echoed at confirmation - a user who meant "0.8% a
         year" catches it before the result rather than after.
         """
-        reading = parse_withdrawal(span)
-        if reading is None:
-            raise _Rejected(self._unreadable(parameter, span))
-
         form, number = reading
         if form == "money":
             self.withdrawal_percent = None
@@ -521,6 +540,14 @@ class Session:
         if self.calculator_id is None:  # pragma: no cover - defensive
             raise RuntimeError("no calculator is in flight")
         return CALCULATORS[self.calculator_id]
+
+    def _parameter(self, name: str | None) -> Parameter | None:
+        if name is None or self.calculator_id is None:
+            return None
+        for parameter in self._spec.parameters:
+            if parameter.name == name:
+                return parameter
+        return None
 
     def _slot_for_label(self, label: str) -> str | None:
         for parameter in self._spec.parameters:

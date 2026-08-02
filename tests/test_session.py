@@ -578,6 +578,64 @@ def test_a_value_the_calculator_would_refuse_is_refused_at_the_slot():
     assert questions(reply) == 1
 
 
+def test_a_bare_answer_fills_the_slot_that_was_asked_not_the_one_named():
+    """Observed live: qwen2.5 filed "10,000" under principal while EMI was
+    pending, silently overwriting the loan amount and leaving EMI empty."""
+    session, stub = loan_session(
+        spans={"loan tenure, 5 lakh at 9%": {"principal": "5 lakh", "annual_rate_pct": "9%"}}
+    )
+    session.handle("loan tenure, 5 lakh at 9%")
+    assert session.pending_slot == "emi"
+
+    stub.spans["10,000"] = {"principal": "10,000"}  # the model gets it wrong
+    session.handle("10,000")
+
+    assert session.slots["emi"] == 10_000.0
+    assert session.slots["principal"] == 500_000.0  # not clobbered
+
+
+def test_a_bare_answer_still_runs_through_validation():
+    """Overriding the slot must not also skip the guards on the value."""
+    session, stub = loan_session()
+    session.handle("calculate my loan tenure")
+    session.handle("5 lakh")
+    session.handle("10,000")
+    assert session.pending_slot == "annual_rate_pct"
+
+    stub.spans["150%"] = {"principal": "150%"}
+    reply = session.handle("150%")
+
+    assert "annual_rate_pct" not in session.slots
+    assert session.slots["principal"] == 500_000.0
+    assert "between 0 and 100" in reply
+
+
+def test_a_message_that_is_more_than_a_value_is_left_to_the_extractor():
+    """"actually make it 8%" while an EMI is pending is a correction, not an
+    answer - the override must not swallow it into the pending slot."""
+    session, stub = loan_session(
+        spans={"loan tenure, 5 lakh at 9%": {"principal": "5 lakh", "annual_rate_pct": "9%"}}
+    )
+    session.handle("loan tenure, 5 lakh at 9%")
+
+    stub.spans["actually make it 8%"] = {"annual_rate_pct": "8%"}
+    session.handle("actually make it 8%")
+
+    assert session.slots["annual_rate_pct"] == 8.0
+    assert "emi" not in session.slots
+    assert session.pending_slot == "emi"
+
+
+def test_the_extractor_is_told_which_slot_is_pending():
+    """A hint the model can use, on top of the override that does not need it."""
+    session, stub = loan_session()
+    session.handle("calculate my loan tenure")
+    session.handle("not a number at all")
+
+    extract_prompts = [user for task, user in stub.calls if task == "extract"]
+    assert any("just asked for: principal" in p.lower() for p in extract_prompts)
+
+
 def test_a_number_the_model_invented_is_never_used():
     """The span must be a fragment of what the user actually typed."""
     session, stub = loan_session(

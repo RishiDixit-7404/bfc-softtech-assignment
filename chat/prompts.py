@@ -68,7 +68,7 @@ EXTRACT_USER_TEMPLATE = """Calculator: {title}
 Slots:
 {slots}
 
-{known}User message:
+{known}{pending}User message:
 \"\"\"
 {message}
 \"\"\""""

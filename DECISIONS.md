@@ -376,3 +376,30 @@ per call. And when the quota ran out mid-walkthrough, the deterministic
 fallback kept filling slots from the raw message and computed the correct
 tenure anyway — the resilience in D13 doing exactly what it was built for,
 under a failure that was not simulated.
+
+---
+
+## D20 — A bare answer fills the slot that was asked
+
+D12 established that the model returns spans and Python decides what they
+mean. A live run showed the same argument applies to *which slot* a span
+belongs to, which D12 had not covered.
+
+Asked "What monthly EMI do you plan to pay?", the user typed `10,000`. The
+extractor returned `{"principal": "10,000"}`. The loan amount — already
+collected, already correct — was silently overwritten, the EMI stayed empty,
+and the bot re-asked the same question. Nothing crashed and nothing looked
+wrong; the answer would simply have been computed from the wrong figure.
+
+**Decision:** when a slot is pending and the entire message parses as a value
+for it, that binding wins and the extractor's assignment is discarded. The
+message is nothing but a value and we know which question it answers, so no
+model judgment is required. Messages carrying more than a value — "actually
+make it 8%" while an EMI is pending — do not trigger it and are left to the
+extractor, which is what makes corrections keep working.
+
+The value still goes through the ordinary guards: overriding the *slot* must
+not skip validation of the *number*.
+
+The extraction prompt now also names the pending slot. That is a hint, not the
+mechanism — the override does not depend on the model taking it.
