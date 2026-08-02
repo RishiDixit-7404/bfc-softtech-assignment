@@ -757,6 +757,56 @@ def test_a_number_the_model_invented_is_never_used():
     assert reply == "How much is the loan?"
 
 
+def test_a_truncated_number_is_not_accepted_as_verbatim():
+    """A fragment of the right number is the worst kind of wrong one.
+
+    "5" is a substring of "5,00,000" once the commas are squashed out, so a
+    plain containment test would have taken a ₹5.00 loan at face value.
+    """
+    session, _ = loan_session(
+        spans={
+            "loan tenure for 5,00,000 at 9%": {"principal": "5", "annual_rate_pct": "9%"}
+        }
+    )
+    reply = session.handle("loan tenure for 5,00,000 at 9%")
+
+    assert session.slots == {"annual_rate_pct": 9.0}
+    assert session.pending_slot == "principal"
+    assert "₹5.00" not in reply
+
+
+TRUNCATED = [
+    ("loan tenure for 5,00,000 at 9%", "5"),
+    ("loan tenure for 5,00,000 at 9%", "00"),
+    ("the EMI is 10,000", "1"),
+    ("5 lakh at 9.5%", "9"),
+    ("₹1,00,000 over 10 years", "10,00"),
+]
+
+WHOLE = [
+    ("loan tenure for 5,00,000 at 9%", "5,00,000"),
+    ("loan tenure for 5,00,000 at 9%", "500000"),  # the model dropped the commas
+    ("loan tenure for 5,00,000 at 9%", "9%"),
+    ("₹5 lakh please", "5 lakh"),
+    ("about 10,000 a month", "10,000"),
+    ("5 lakh at 9.5%", "9.5"),
+]
+
+
+@pytest.mark.parametrize("message, span", TRUNCATED)
+def test_a_span_with_a_digit_against_either_end_is_rejected(message, span):
+    from chat.router import _is_verbatim
+
+    assert _is_verbatim(span, message) is False
+
+
+@pytest.mark.parametrize("message, span", WHOLE)
+def test_a_whole_span_the_user_typed_is_accepted(message, span):
+    from chat.router import _is_verbatim
+
+    assert _is_verbatim(span, message) is True
+
+
 # --------------------------------------------------------------------------
 # Failure of the model itself
 # --------------------------------------------------------------------------

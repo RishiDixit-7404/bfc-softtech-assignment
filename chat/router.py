@@ -9,8 +9,10 @@ Three calls, three narrow jobs:
 The model never returns a number this layer trusts. Extraction returns the
 *characters the user typed*; ``chat/formatting.py`` decides what they mean, and
 a span that is not a verbatim fragment of the message is dropped as invented.
-That is the difference between a model reading a message and a model writing
-one.
+Half a number is not a verbatim fragment either: ``"5"`` out of ``"5,00,000"``
+is refused on the same grounds as an outright fabrication, since a truncated
+principal is the harder of the two to notice. That is the difference between a
+model reading a message and a model writing one.
 
 Keeping all three here means ``chat/session.py`` holds state logic and nothing
 else, and that the whole state machine can be driven by a stub.
@@ -182,7 +184,33 @@ def _squash(text: str) -> str:
     return re.sub(r"[\s,₹]", "", text.lower())
 
 
+# Characters that make a span a *piece* of a number rather than the number.
+_DIGIT = frozenset("0123456789.")
+
+
+def _clings(text: str, index: int) -> bool:
+    """True when ``index`` holds a digit, so a match here cuts a number in half."""
+    return 0 <= index < len(text) and text[index] in _DIGIT
+
+
 def _is_verbatim(span: str, message: str) -> bool:
-    """True when the span really is a fragment of what the user typed."""
-    squashed = _squash(span)
-    return bool(squashed) and squashed in _squash(message)
+    """True when the span is a whole fragment of what the user typed.
+
+    A plain substring test is not enough. Squashing commas out of "5,00,000"
+    leaves "500000", in which the model's "5" is a substring - so a truncated
+    principal would pass as verbatim and ₹5.00 would be accepted for a five
+    lakh loan. The point of the check is to catch exactly that, so a match
+    must not have a digit hard against either end of it.
+    """
+    needle, haystack = _squash(span), _squash(message)
+    if not needle:
+        return False
+
+    start = haystack.find(needle)
+    while start != -1:
+        if not _clings(haystack, start - 1) and not _clings(
+            haystack, start + len(needle)
+        ):
+            return True
+        start = haystack.find(needle, start + 1)
+    return False
