@@ -335,8 +335,20 @@ class Session:
             # it answers: the one just asked. Observed against a live model
             # filing "10,000" under `principal` while the pending slot was
             # `emi` — which silently overwrote the loan amount and left the
-            # EMI empty. D12 refuses the model's numbers; a slot assignment
-            # is no more trustworthy, and here Python knows better.
+            # EMI empty. Nothing crashed and nothing looked wrong; the tenure
+            # would simply have been computed from the wrong figure.
+            #
+            # The extractor is already refused the right to invent a *value* -
+            # it returns the literal span the user typed and this layer parses
+            # it, because a model answering "500000" to "5 lakh" guesses right
+            # while one answering "5000000" guesses wrong in a way nothing
+            # downstream can detect. The same argument applies to *which slot*
+            # a span belongs to, and it is stronger here: the message is
+            # nothing but a value and we know which question was asked, so no
+            # model judgment is required at all.
+            #
+            # The value still goes through the ordinary guards below.
+            # Overriding the slot must not skip validating the number.
             spans = {self.pending_slot: text}
         elif not spans and self.pending_slot is not None:
             # Nothing extracted, but a question is outstanding: the message may

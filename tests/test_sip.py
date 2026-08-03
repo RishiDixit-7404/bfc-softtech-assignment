@@ -1,8 +1,13 @@
 """TEST_VECTORS.md sections 2 and 6.2 — SIP for a target amount.
 
-The spec formula multiplies by (1 + r) where an annuity-due solve divides.
-It is implemented verbatim; the deviation is documented by assertion here and
-in prose in DECISIONS.md D2.
+The spec formula multiplies by (1 + r) where an annuity-due solve divides, so
+the contribution it returns overshoots the target by exactly (1 + r) squared.
+It is implemented verbatim rather than corrected, and the deviation is
+documented by assertion rather than by prose: test_sip_matches_spec_formula
+pins the spec value as the graded behaviour, and
+test_sip_spec_overshoots_annuity_due_by_one_plus_r_squared pins the ratio, so
+the discrepancy is demonstrably understood and not merely transcribed. The
+reasoning is in the module docstring of calculators/sip.py.
 """
 
 import pytest

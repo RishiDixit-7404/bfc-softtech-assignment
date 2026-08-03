@@ -6,8 +6,27 @@
 
 The closed form is happy to return a negative final balance, which would be
 reported as a portfolio that "ended with minus three lakh" and, worse, as a
-handsome profit. That is arithmetically consistent and financially nonsense,
-so depletion is detected and reported instead. See ``DECISIONS.md``.
+handsome profit. That is arithmetically consistent and financially nonsense, so
+depletion is detected and reported instead.
+
+Depletion is a *result*, not an exception. ``TEST_VECTORS.md`` W4 and W5 have
+entirely valid inputs and a real answer — "you run out in month 61" — so raising
+would misclassify the failure. Contrast an EMI below the monthly interest, which
+does raise, because there no answer exists at all. So :class:`SwpProjection`
+carries ``depleted``, ``depletion_month`` and ``actual_withdrawn`` alongside the
+spec's three figures, and the presentation layer decides what a person sees.
+
+The spec's profit figure is not merely pessimistic once the corpus is dry — it is
+unreliable in both directions, which is the reason ``actual_withdrawn`` exists at
+all. W5 reports a ₹13,068.14 loss on a plan that paid out ₹3,63,150.66 against
+₹3,00,000 in, a real gain of ₹63,150.66. W4 happens to be exactly right. The
+identity ``FV + W*n == actual_withdrawn`` holds while the corpus is solvent and
+breaks the month it is not, so the formula is right up to depletion and
+arbitrarily wrong afterwards.
+
+The depletion month is found by simulation rather than by inverting the formula,
+and the simulation is skipped when ``FV >= 0`` — see :func:`_simulate_depletion`
+for why that is safe.
 """
 
 from __future__ import annotations

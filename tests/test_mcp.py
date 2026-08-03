@@ -112,10 +112,21 @@ def test_rate_bounds_come_from_the_validator_not_from_a_literal():
 
 
 def test_the_sip_tool_warns_that_the_spec_formula_is_not_an_annuity_due():
-    """D2 is the one thing an outside caller would otherwise misread as a bug."""
-    sip = next(t for t in tool_definitions() if t["name"] == "sip")
+    """The one thing an outside caller would otherwise read as a bug.
 
-    assert "annuity-due" in sip["description"]
+    The spec's trailing (1 + r) makes the result overshoot the target by
+    (1 + r) squared. A caller who checks the arithmetic and finds it 1.9% high
+    at 12% a year needs to know that is the specified behaviour, not a defect -
+    and needs to be told how to get the conventional figure. Since this text
+    goes over the wire, it is the only place such a caller can learn it.
+    """
+    sip = next(t for t in tool_definitions() if t["name"] == "sip")
+    description = sip["description"]
+
+    assert "annuity-due" in description
+    assert "(1 + r)^2" in description  # names the size of the deviation
+    assert "19,067.62" in description  # and what it costs, from vector S1
+    assert "Divide this result by (1 + r)^2" in description  # and the way out
 
 
 # --------------------------------------------------------------------------
