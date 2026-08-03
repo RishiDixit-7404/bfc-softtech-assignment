@@ -17,10 +17,15 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env                      # put your Gemini key in it
-export $(grep -v '^#' .env | xargs)
+set -a; source .env; set +a               # export everything in it
 
 python app.py                             # http://127.0.0.1:8000
 ```
+
+`set -a` marks every subsequent assignment for export, so sourcing the file is
+enough; `set +a` puts the shell back. The obvious
+`export $(grep -v '^#' .env | xargs)` splits on whitespace and mangles any
+value containing a space, which a model name or a host header eventually will.
 
 Prefer to run it locally with no key? Ollama needs no configuration beyond
 being up:
@@ -33,6 +38,27 @@ python app.py
 
 Without either, the server still starts and the page still loads — the first
 message then tells you what is missing instead of showing a stack trace.
+
+---
+
+## Two things in the spec worth reading before the code
+
+**The SIP formula multiplies where a standard annuity-due solve divides.**
+`SPEC.md` gives `SIP = (Target·r / ((1+r)^(n·12) − 1)) × (1 + r)`; the
+conventional form divides by `(1 + r)`. The spec's version therefore overshoots
+the target by exactly `(1+r)²` — ₹19,067.62 of unnecessary saving against a
+₹10,00,000 goal. It is **implemented verbatim**, because it is the client's
+stated requirement, and two tests pin it: one asserts the spec value, one
+asserts the ratio against the annuity-due value to prove the deviation was
+understood rather than transcribed. See `DECISIONS.md` D2.
+
+**The spec asks for three calculators and two calculators.** The intro promises
+a bot that calculates loan tenure, SIP and SWP and requires it to say so on
+start-up; the note under *Behavior* says "integrate any two". A two-calculator
+build would make the mandated start-up message advertise something that does
+not exist. **All three are implemented** — the marginal cost is one pure
+function each, and `TEST_VECTORS.md` supplies verified vectors for all of them.
+See `DECISIONS.md` D1.
 
 ---
 
@@ -261,10 +287,10 @@ over JSON-RPC. **The answers are identical objects, not merely equal numbers** �
 `pytest -q` passes in both modes and CI runs the whole matrix twice, once per
 transport, so that stays true rather than having been true once.
 
-`calculators/` did not change to make this work; `git diff main -- calculators/`
-is empty for the entire phase. The adapter is thin by construction, and a guard
-test asserts it calls `CALCULATORS[name].function` rather than naming any
-calculator directly.
+`calculators/` did not change to make this work — `git diff bcd3cd2~1..a715868
+-- calculators/` over the five commits that added all of it is empty. The
+adapter is thin by construction, and a guard test asserts it reaches a
+calculator only through `CALCULATORS[name].function`, never by naming one.
 
 ```
   chat/tools.py        DirectTools | McpTools — one method, two transports
@@ -310,6 +336,27 @@ sentence the direct path renders — asserted by a test that compares the two.
 `chat/session.py` changed by one line for the whole phase, and
 `chat/formatting.py` by none. See `DECISIONS.md` D24–D26.
 
+### What this is not
+
+The protocol is hand-written against the standard library rather than taken
+from the `mcp` SDK — the SDK is async throughout, against a synchronous state
+machine, and brings roughly a dozen transitive dependencies to a five-line
+`requirements.txt`. D24 has the full argument. The cost of that choice is that
+only the slice this needs exists, so it is listed here rather than left to be
+discovered:
+
+| Implemented | Not implemented |
+| --- | --- |
+| `initialize`, `notifications/initialized`, `ping` | resources, prompts, sampling, completion |
+| `tools/list`, `tools/call` | progress, cancellation, subscriptions |
+| stdio, JSON-RPC 2.0, newline-delimited | the SSE and streamable-HTTP transports |
+| `isError` results and JSON-RPC errors | auth, OAuth, multi-client sessions |
+
+It is a tool server for three calculators, spoken to by one known peer.
+Claiming otherwise would be the actual failure. Needing any of the right-hand
+column — or needing to be a client of servers written by other people — is what
+would make the SDK the right answer instead.
+
 ---
 
 ## Free-tier limits, if you use Gemini
@@ -344,25 +391,6 @@ was captured there.
 | Model down, slow, babbling, or unconfigured | Four distinct plain sentences. No traceback, no HTTP status, no provider JSON reaches the user, and no collected value is lost | D18 |
 
 ---
-
-## Two things in the spec worth reading before the code
-
-**The SIP formula multiplies where a standard annuity-due solve divides.**
-`SPEC.md` gives `SIP = (Target·r / ((1+r)^(n·12) − 1)) × (1 + r)`; the
-conventional form divides by `(1 + r)`. The spec's version therefore overshoots
-the target by exactly `(1+r)²` — ₹19,067.62 of unnecessary saving against a
-₹10,00,000 goal. It is **implemented verbatim**, because it is the client's
-stated requirement, and two tests pin it: one asserts the spec value, one
-asserts the ratio against the annuity-due value to prove the deviation was
-understood rather than transcribed. See `DECISIONS.md` D2.
-
-**The spec asks for three calculators and two calculators.** The intro promises
-a bot that calculates loan tenure, SIP and SWP and requires it to say so on
-start-up; the note under *Behavior* says "integrate any two". A two-calculator
-build would make the mandated start-up message advertise something that does
-not exist. **All three are implemented** — the marginal cost is one pure
-function each, and `TEST_VECTORS.md` supplies verified vectors for all of them.
-See `DECISIONS.md` D1.
 
 ---
 
