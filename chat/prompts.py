@@ -202,6 +202,15 @@ LLM_MALFORMED = (
     "could not read that message. Nothing you have told me so far is lost."
 )
 
+# Not a language-model failure and not a calculation failure: the calculators
+# themselves could not be reached. Only the MCP transport can produce it, and
+# it says so in the same shape as the four above - what went wrong, and that
+# it cost nothing.
+TOOLS_UNAVAILABLE = (
+    "I could not reach the calculators just now, so I could not run that. "
+    "Nothing you have told me so far is lost."
+)
+
 REJECTED_SPAN = "I could not read {label} from '{span}'."
 
 UPDATED = "Updated {label} to {value}."

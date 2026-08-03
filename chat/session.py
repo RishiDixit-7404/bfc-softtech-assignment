@@ -82,6 +82,7 @@ from .llm import (
     LLMTimeoutError,
 )
 from .router import Intent, answer, classify, extract_spans
+from .tools import Tools, ToolTransportError, default_tools
 
 
 class State(Enum):
@@ -140,6 +141,7 @@ class Session:
     """One conversation. Cheap to construct, holds no I/O of its own."""
 
     llm: LLM
+    tools: Tools = field(default_factory=default_tools)
     state: State = State.IDLE
     calculator_id: str | None = None
     slots: dict[str, float] = field(default_factory=dict)
@@ -175,6 +177,12 @@ class Session:
         except LLMError as failure:
             copy = _failure_copy(failure)
             return copy if self.state is State.IDLE else self._resume(copy)
+        except ToolTransportError:
+            # Only reachable on the MCP transport, and not a CalculatorError:
+            # the numbers were never in question, the pipe was. Reported like
+            # a provider outage, and costing the same - the turn, not the
+            # slots. The state is still CONFIRMING, so "yes" retries.
+            return self._resume(prompts.TOOLS_UNAVAILABLE)
 
     # ------------------------------------------------------------------
     # Turn handling
@@ -513,10 +521,15 @@ class Session:
         return compose(prose, self._edit_question())
 
     def _compute(self) -> str:
-        """Run the calculator and present the result, or the reason there is none."""
+        """Run the calculator and present the result, or the reason there is none.
+
+        ``self.tools`` may be a direct call or an MCP round trip; the except
+        clauses below do not know which, because a calculator error crosses
+        the boundary as the class it was. See ``mcp_tools/wire.py``.
+        """
         spec = self._spec
         try:
-            result = spec.function(**self.slots)
+            result = self.tools.invoke(spec.id, **self.slots)
         except InfeasibleScenarioError as infeasible:
             # Every input was individually legal, so nothing is thrown away:
             # the user picks one value to revise and the rest stand.
