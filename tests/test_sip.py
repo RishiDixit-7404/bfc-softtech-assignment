@@ -2,7 +2,7 @@
 
 The spec formula multiplies by (1 + r) where an annuity-due solve divides.
 It is implemented verbatim; the deviation is documented by assertion here and
-in prose in DECISIONS.md. See CLAUDE.md section 6.
+in prose in DECISIONS.md D2.
 """
 
 import pytest

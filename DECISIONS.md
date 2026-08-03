@@ -182,15 +182,16 @@ empirical check — 0 counterexamples in 400,000 randomised scenarios — are in
 
 ## D10 — Two additions to the target file layout
 
-`CLAUDE.md` §2 specifies the layout. Two files are added, deliberately:
+The agreed file layout for this build names one module per calculator plus a
+registry. Two files are added to it, deliberately:
 
 - **`calculators/validation.py`** — without it the amount/rate/period guards get
   copy-pasted into three modules and drift. Putting them in `rates.py` would
   muddle a file whose entire purpose is holding exactly one formula.
-- **`chat/formatting.py`** — §3 requires money to be formatted only at the
-  presentation boundary and §9 mandates `₹1,00,000` grouping. That needs one
-  tested home, and it cannot be `prompts.py` (prompt text only) or `app.py`
-  (transport only). *Added in Phase 3.*
+- **`chat/formatting.py`** — money must be formatted only at the presentation
+  boundary, in `₹1,00,000` grouping. That needs one tested home, and it cannot
+  be `prompts.py` (prompt text only) or `app.py` (transport only).
+  *Added in Phase 3.*
 
 Both were approved at plan review.
 
@@ -612,10 +613,10 @@ subprocess died.
 
 ## D26 — Tool descriptions live in `mcp_tools/schemas.py`, not `chat/prompts.py`
 
-`CLAUDE.md` §3 puts all prompt text in one file: "an f-string containing
-instructions to a model, located anywhere else, is a bug." MCP tool
-descriptions are read by models. The rule deserves an answer rather than a
-quiet exception.
+This build has a standing rule that all prompt text lives in one file: an
+f-string containing instructions to a model, located anywhere else, is a bug.
+MCP tool descriptions are read by models. The rule deserves an answer rather
+than a quiet exception.
 
 **Decision:** they stay in `schemas.py`, because they are an API contract and
 not conversational copy. The distinction that matters is the audience: every

@@ -1,6 +1,5 @@
 # --- Local working notes: not part of the deliverable ---
-CLAUDE.md
-BUILD_PLAN.md
+# Anything personal to one clone belongs in .git/info/exclude, not here.
 notes/
 scratch/
 

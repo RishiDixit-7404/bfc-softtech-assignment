@@ -1,5 +1,7 @@
 # Finance chatbot with interactive calculators
 
+[![tests](https://github.com/RishiDixit-7404/bfc-softtech-assignment/actions/workflows/tests.yml/badge.svg)](https://github.com/RishiDixit-7404/bfc-softtech-assignment/actions/workflows/tests.yml)
+
 A chatbot that talks about personal finance and runs three calculators — loan
 tenure, SIP for a target amount, and SWP — collecting their inputs one question
 at a time rather than presenting a form. The language model classifies intent,
@@ -12,7 +14,8 @@ function in `calculators/`.
 ## Run it
 
 ```bash
-git clone <repo-url> && cd bfcsofttech
+git clone https://github.com/RishiDixit-7404/bfc-softtech-assignment.git
+cd bfc-softtech-assignment
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 

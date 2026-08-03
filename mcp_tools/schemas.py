@@ -11,11 +11,11 @@ wrong from the outside and are therefore spelled out at every parameter that
 has them: rates are percentages as written (``9`` means 9% a year, not 0.09),
 and periods are in years while several of the outputs are in months.
 
-A note on ``CLAUDE.md`` §3, which puts all prompt text in ``chat/prompts.py``:
-these strings are read by models, so the question is fair. They are an API
-contract rather than conversational copy — units, bounds and formulas, no
-instruction to any model about how to behave — and an MCP client that is not a
-model reads exactly the same text. ``DECISIONS.md`` D26 records the call.
+A note on the rule that puts all prompt text in ``chat/prompts.py``: these
+strings are read by models, so the question is fair. They are an API contract
+rather than conversational copy — units, bounds and formulas, no instruction to
+any model about how to behave — and an MCP client that is not a model reads
+exactly the same text. ``DECISIONS.md`` D26 records the call.
 """
 
 from __future__ import annotations
