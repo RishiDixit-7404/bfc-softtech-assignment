@@ -27,7 +27,21 @@ readable, and this chatbot is not that caller. It reads the structure and lets
 
 What is not implemented, so nobody has to find out by trying: resources,
 prompts, sampling, completion, progress, cancellation, and the HTTP transports.
-Tools over stdio is the whole surface. See ``DECISIONS.md`` D24.
+Tools over stdio is the whole surface.
+
+That slice is hand-written rather than taken from the official ``mcp`` SDK, for
+two reasons. The SDK is async throughout, and ``chat/session.py`` is a
+synchronous state machine called from a synchronous request handler, so using it
+would mean threading an event loop through the conversation - or an
+``asyncio.run`` per call - to overlap a millisecond of arithmetic behind a pipe
+with nothing. And it arrives with roughly a dozen transitive dependencies
+(pydantic, starlette, uvicorn, jsonschema, opentelemetry, pyjwt) for a project
+whose ``requirements.txt`` is five lines and which already reaches both LLM
+providers through ``urllib`` rather than their SDKs.
+
+Needing any of the unimplemented list above - or needing to be a *client* of
+servers written by other people, which is a far larger problem than speaking to
+one known peer - is what would make the SDK the right answer instead.
 """
 
 from __future__ import annotations

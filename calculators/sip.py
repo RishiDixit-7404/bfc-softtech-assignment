@@ -7,10 +7,22 @@
              (1 + r)^(n*12) - 1
 
 The trailing ``x (1 + r)`` is implemented verbatim. It is *not* the standard
-annuity-due solve, which divides by ``(1 + r)`` instead; the spec's result
-overshoots the target by exactly ``(1 + r)^2``. See ``DECISIONS.md`` and
-``TEST_VECTORS.md`` section 2.1 — the deviation is asserted by a test rather
-than silently corrected here.
+annuity-due solve, which divides by ``(1 + r)`` instead, and the difference is
+not cosmetic: because the spec multiplies where the convention divides, the
+contribution it returns overshoots the target by exactly ``(1 + r)^2``. For
+``TEST_VECTORS.md`` S1 — ₹10,00,000 in 10 years at 12% — that is ₹4,548.680236 a
+month reaching ₹10,19,067.62, or ₹19,067.62 of saving the saver did not need to
+do. The ratio holds to eight decimal places across all three vectors, which is
+what identifies the cause as the misplaced factor rather than a rounding
+artefact.
+
+It ships as the client wrote it. Substituting the conventional formula would be
+changing a stated requirement without saying so; implementing it without
+noticing would be worse. So ``tests/test_sip.py`` asserts the spec value as the
+graded behaviour, and a second test asserts the ``(1 + r)^2`` ratio against the
+annuity-due figure to show the deviation was understood rather than transcribed.
+A one-character change here and one test flip is all it would take, if the
+client confirms the factor is a typo. See ``TEST_VECTORS.md`` section 2.1.
 """
 
 from __future__ import annotations

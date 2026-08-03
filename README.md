@@ -322,8 +322,10 @@ be this chatbot: every parameter carries its units (`INR`, `percent per year`,
 `years`), its range taken from `calculators/validation.py`'s own constants
 rather than restated, and the two things an outsider gets wrong — that `9` means
 9% a year and not `0.09`, and that periods are in years while several outputs
-are in months. The SIP tool also carries D2's warning that the specified formula
-is not a standard annuity-due solve.
+are in months. The SIP tool also carries the warning that the specified formula
+is not a standard annuity-due solve, what that costs (`(1 + r)²` over the
+target), and how to get the conventional figure — because a caller who checks
+the arithmetic from outside has nowhere else to learn it.
 
 **The interesting part is the error boundary.** `chat/formatting.py` does not
 render `str(exc)`; it reads `EmiTooLowError.minimum_emi`, `.monthly_interest`
@@ -351,11 +353,20 @@ sentence the direct path renders — asserted by a test that compares the two.
 ### What this is not
 
 The protocol is hand-written against the standard library rather than taken
-from the `mcp` SDK — the SDK is async throughout, against a synchronous state
-machine, and brings roughly a dozen transitive dependencies to a five-line
-`requirements.txt`. D24 has the full argument. The cost of that choice is that
-only the slice this needs exists, so it is listed here rather than left to be
-discovered:
+from the `mcp` SDK. Two reasons. The SDK is async throughout, and
+`chat/session.py` is a synchronous state machine called from a synchronous
+request handler, so adopting it would mean threading an event loop through the
+conversation — or an `asyncio.run` per call — to overlap a millisecond of
+arithmetic behind a pipe with nothing. And it brings roughly a dozen transitive
+dependencies (pydantic, starlette, uvicorn, jsonschema, opentelemetry, pyjwt) to
+a five-line `requirements.txt` that already reaches both LLM providers through
+`urllib` rather than their SDKs.
+
+The cost is that only the slice this needs exists, so it is listed here rather
+than left to be discovered. Needing anything in the right-hand column — or
+needing to be a *client* of servers written by other people, which is a far
+larger problem than speaking to one known peer — is what would make the SDK the
+right answer instead.
 
 | Implemented | Not implemented |
 | --- | --- |

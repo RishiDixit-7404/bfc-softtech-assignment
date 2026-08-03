@@ -4,11 +4,15 @@ The server runs as a child process; this speaks JSON-RPC 2.0 to it, one JSON
 object per line. It is deliberately small, and everything it does not do is
 listed in ``mcp_tools/server.py``.
 
-Synchronous on purpose. ``chat/session.py`` is a plain state machine called
-from a FastAPI handler, and the calculator call is a millisecond of arithmetic
-behind a pipe; an async client would mean an event loop threaded through the
-session, or an ``asyncio.run`` per call, to overlap nothing. See D24 for the
-comparison with the official SDK.
+Synchronous on purpose, and hand-written rather than the official ``mcp`` SDK.
+``chat/session.py`` is a plain state machine called from a FastAPI handler, and
+the calculator call is a millisecond of arithmetic behind a pipe; the SDK is
+async throughout, so using it would mean an event loop threaded through the
+session, or an ``asyncio.run`` per call, to overlap nothing. It would also add
+roughly a dozen transitive dependencies to a five-line ``requirements.txt``.
+Speaking the protocol to one known peer is a much smaller problem than being a
+client of servers written by other people, which is where the SDK earns its
+weight — ``mcp_tools/server.py`` lists exactly which slice exists here.
 
 The process starts on first use and is reused, because spawning an interpreter
 per EMI calculation is a strange way to save nothing. It is shut down at exit.

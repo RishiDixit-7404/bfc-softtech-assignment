@@ -12,10 +12,14 @@ has them: rates are percentages as written (``9`` means 9% a year, not 0.09),
 and periods are in years while several of the outputs are in months.
 
 A note on the rule that puts all prompt text in ``chat/prompts.py``: these
-strings are read by models, so the question is fair. They are an API contract
-rather than conversational copy — units, bounds and formulas, no instruction to
-any model about how to behave — and an MCP client that is not a model reads
-exactly the same text. ``DECISIONS.md`` D26 records the call.
+strings are read by models, so the question is fair. The distinction that
+settles it is the audience. Every string in ``chat/prompts.py`` is addressed to
+*the* model this bot talks to, and changing one changes how the bot behaves. A
+tool schema is addressed to any caller at all — the ``tools/list`` output is
+equally for a person reading it, a script, or a different model — and it
+describes what a function does rather than how anyone should act. Held to that
+line, nothing below instructs a model to behave in any way: units, bounds and
+closed forms only.
 """
 
 from __future__ import annotations
@@ -45,7 +49,14 @@ _TOOL_DESCRIPTIONS = {
         "SIP = (Target * r / ((1 + r)^(n*12) - 1)) * (1 + r), with n in years. "
         "Note the trailing multiplication: this is the client's specified "
         "formula, and it differs from a standard annuity-due solve, which "
-        "divides by (1 + r) instead. See DECISIONS.md D2."
+        "divides by (1 + r) instead. The consequence is not a rounding "
+        "difference: contributing this amount for the full term reaches "
+        "(1 + r)^2 times the target - 1.9068% over at 12% a year, which is "
+        "19,067.62 rupees of unnecessary saving against a 10,00,000 goal over "
+        "10 years. It is implemented as specified rather than silently "
+        "corrected, and two tests pin it: one asserts the specified value, one "
+        "asserts the ratio against the annuity-due value. Divide this result by "
+        "(1 + r)^2 if you want the conventional figure."
     ),
     "swp": (
         "How a lumpsum holds up while a fixed amount is withdrawn monthly. "

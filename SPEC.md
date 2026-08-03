@@ -2,8 +2,11 @@
 
 > **Status:** Source of truth. Transcribed verbatim from the provided PDF.
 > Do not edit to match the implementation. If the implementation disagrees with
-> this file, the implementation is wrong — or the disagreement is a deliberate,
-> documented decision recorded in `DECISIONS.md`.
+> this file, the implementation is wrong — unless the disagreement is deliberate,
+> in which case it is stated where the code lives: each calculator's module
+> docstring carries its own deviations, and the README collects the two that
+> matter most (the SIP formula's trailing `(1 + r)`, and the intro asking for
+> three calculators where the *Behavior* note asks for two).
 
 **Level:** Fresher  **Time:** 2 days  **Effort:** ~8–10 hours
 

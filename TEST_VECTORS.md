@@ -55,8 +55,8 @@ L1 clears in **63** payments, L2 in **90**, L3 in **69** — each exactly
 `ceil(n)`. Closed form and simulation agree. ✅
 
 > **Display decision:** report `ceil(n)` months, because a borrower cannot make
-> 0.22 of a payment. Show the exact figure alongside it. Record this in
-> `DECISIONS.md`.
+> 0.22 of a payment. Show the exact figure alongside it, so nothing is hidden.
+> State the reasoning on `LoanTenure` itself, where the two fields are defined.
 >
 > **Spec example check:** the spec says `1.5 => 1 year & 6 months`, i.e. the
 > user-facing value is expressed in *years*. Since `n` is in months, convert with
@@ -141,7 +141,10 @@ spec *multiplies*.
 2. `test_sip_spec_overshoots_annuity_due_by_one_plus_r_squared` — asserts the
    ratio. This is the test that proves you understood the maths rather than
    transcribed it.
-3. One paragraph in `DECISIONS.md`, one line in `README.md`.
+3. The reasoning stated where the formula is, in the module docstring of
+   `calculators/sip.py`, plus one line in `README.md` — and, because the SIP is
+   also exposed as an MCP tool, in its tool description, since a caller checking
+   the arithmetic from outside has nowhere else to learn it.
 
 Implementing the client's formula while demonstrating you spotted the deviation
 is strictly better than either silently "correcting" it or not noticing.
@@ -206,9 +209,10 @@ reality every month after depletion:
 
 > **Correction notice.** An earlier revision of this section narrated W5's profit
 > as ₹2,86,932 — `FV + W·n` with the `− P` term dropped. That was wrong and was
-> corrected in commit `1d1b499`. `DECISIONS.md` D11 and `tests/test_swp.py` refer
-> to that original error; this note is what keeps those references intelligible.
-> The correct figure is below.
+> corrected in commit `1d1b499`. `tests/test_swp.py` still mentions that original
+> figure, and this note is what keeps the mention intelligible. Nothing asserted
+> in the suite ever depended on the prose: the formula block in section 3 was
+> taken as authoritative throughout. The correct figure is below.
 
 **The spec's profit figure is unreliable in both directions.** Applying
 `FV + W·n − P` to W5 gives **−13,068.139982** — a reported *loss*. But the corpus
@@ -222,7 +226,8 @@ actually paid out ₹3,63,150.66 against ₹3,00,000 in, a real gain of
 > 218,716.859472. W5 depletes in month 61, and the two diverge by ₹76,218.80.
 >
 > So the spec formula is not wrong in general — it is right up to depletion and
-> arbitrarily wrong afterward. That framing is what belongs in `DECISIONS.md`.
+> arbitrarily wrong afterward. That framing belongs in the module docstring of
+> `calculators/swp.py`, next to the code that acts on it.
 
 **Required behaviour:** detect `FV < 0`, and report *"your withdrawals exhaust the
 corpus in month 61 (year 6, month 1)"* instead of a negative balance. Determine
@@ -344,5 +349,5 @@ At `R = 0` the balance is strictly decreasing and the argument holds trivially.
 Verified empirically: **0 counterexamples in 400,000 randomised scenarios**
 (P ∈ [10⁴, 5×10⁶], R ∈ [0, 100], years ∈ [1, 40], W ∈ [0, P/2]).
 
-The optimisation is sound. Cite this section in `DECISIONS.md` rather than
-re-deriving it.
+The optimisation is sound. Cite this section from `_simulate_depletion` in
+`calculators/swp.py` rather than re-deriving the proof there.
