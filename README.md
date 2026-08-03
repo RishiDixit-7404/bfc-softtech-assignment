@@ -13,6 +13,8 @@ function in `calculators/`.
 
 ## Run it
 
+**Python only. No Node, no build step, nothing else to install.**
+
 ```bash
 git clone https://github.com/RishiDixit-7404/bfc-softtech-assignment.git
 cd bfc-softtech-assignment
@@ -24,6 +26,12 @@ set -a; source .env; set +a               # export everything in it
 
 python app.py                             # http://127.0.0.1:8000
 ```
+
+The frontend is a Vite + React app, and its **build output is committed** to
+`ui/` precisely so that the block above is the whole story — `app.py` serves
+that directory and there is no toolchain in the way. The sources are in
+`frontend/` and you only need them to *change* the interface. See *Frontend*
+below and `DECISIONS.md` D27.
 
 `set -a` marks every subsequent assignment for export, so sourcing the file is
 enough; `set +a` puts the shell back. The obvious
@@ -112,8 +120,11 @@ mistakes to notice: `₹5.00` for a five lakh loan reads as a typo, not a bug.
 ## Architecture
 
 ```
-  ui/index.html      one page, no build step, no framework, no CDN request
-        │  HTTP (JSON)
+  frontend/          Vite + React + TypeScript. Reads the shape of a reply,
+        │            never its values. Builds to ->
+        ▼
+  ui/                committed build output. No CDN, no external request.
+        │  HTTP (JSON): {session_id, reply}, reply a plain string
         ▼
   app.py             routes, session id, serialization. No logic, no math.
         │
@@ -147,6 +158,8 @@ from `chat/` or `app` either, for the same reason one layer down.
 | `chat/formatting.py` | the number/text boundary, both directions |
 | `chat/tools.py` | the transport seam: `DirectTools` or `McpTools`, one method each |
 | `mcp_tools/wire.py` | the error boundary — exceptions across a process, structure intact |
+| `frontend/src/lib/replyStructure.ts` | reply text → paragraphs and list items. Reads no value |
+| `frontend/src/hooks/useConversation.ts` | all session state. No component fetches anything |
 
 Four rules hold the conversation together, and they are what make it a state
 machine rather than a form in disguise:
@@ -362,6 +375,98 @@ would make the SDK the right answer instead.
 
 ---
 
+## Frontend
+
+**Vite + React 19 + TypeScript**, source in `frontend/`, building to `../ui`.
+You do not need any of this to run the app — see *Run it*. You need it to change
+the interface.
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173, proxying /session and /chat to :8000
+npm test           # Vitest + React Testing Library, 42 tests
+npm run build      # type-checks, then writes ../ui
+```
+
+`npm run dev` expects `python app.py` running on port 8000; the proxy is two
+lines of `vite.config.ts` and exists only for development. The built page talks
+to its own origin.
+
+**The build output in `ui/` is committed.** That is unusual and deliberate: the
+reviewer's path has to be `pip install && python app.py`, and ignoring `ui/`
+would turn a Python submission into one that needs a Node toolchain to show its
+own page. It also means this entire phase changed no Python at all — `app.py`
+already mounted `ui/` and was never touched. The full argument, and the costs
+accepted, are in `DECISIONS.md` D27.
+
+### What the frontend is not allowed to do
+
+`chat/formatting.py` owns money. It produced every `₹6,22,245.30` in Indian
+grouping at the presentation boundary, and it stays the only thing with an
+opinion on how an amount looks. So the frontend reads the **shape** of a reply
+and never its values:
+
+| Presentation — fine | Business logic — not |
+| --- | --- |
+| a blank line becomes a paragraph break | parsing a `₹` figure out of a sentence |
+| a leading `- ` becomes a real `<li>` | re-rounding, re-grouping, or abbreviating to lakh |
+| `tabular-nums` so amounts align in a column | computing a total the server did not send |
+
+`frontend/src/lib/replyStructure.ts` matches exactly two things — a blank line
+and a leading `"- "` — and no digit, `₹` or percent sign anywhere. Every string
+it emits is a substring of the string it was given. Three tests hold that line:
+two compare the emitted fragments against the input, and one extracts every
+`[₹0-9.,%&]` character from the rendered DOM and requires it to be identical to
+the reply. `DECISIONS.md` D28.
+
+The API contract is unchanged for the same reason: `POST /session` and
+`POST /chat` still return `{session_id, reply}` with `reply` a plain string. A
+frontend that needed a richer payload would be a frontend asking to do
+arithmetic.
+
+### Structure
+
+```
+frontend/src/
+  api/client.ts          typed fetch; the only module that knows the server exists
+  api/types.ts           the {session_id, reply} contract
+  hooks/useConversation  all session state: turns, status, failures. No component fetches.
+  lib/replyStructure.ts  pure: text -> paragraphs and list items. Touches no value.
+  lib/calculators.ts     pure: greeting -> chip labels
+  components/            props in, DOM out. Transcript, Turn, ReplyBody,
+                         Composer, CalculatorChips, ThinkingIndicator, Notice
+  App.tsx                composition, plus the one piece of view state: the draft
+```
+
+Design notes worth stating, since they were choices rather than defaults:
+
+- **Conversation, not chat bubbles.** Turns are separated by a rule and a small
+  caps speaker label. A result is a short table of amounts, and a tinted
+  rounded rectangle is a worse place to read one than a plain column is.
+- **One measure, 65ch**, and `font-variant-numeric: tabular-nums` on the whole
+  transcript so figures align vertically down the page.
+- **Both themes are chosen.** The dark background is a warm near-black rather
+  than an inversion, and the accent lightens for it, because `#1f4b7a` has 9:1
+  contrast on white and 2:1 on charcoal. Every pair clears AA.
+- **Real states.** The field is disabled with a "Working that out" indicator
+  while a request is in flight; live replies take one to four seconds. A fetch
+  failure and a 404 unknown session get different messages, because retrying
+  fixes one and never fixes the other — and neither leaves a dead input without
+  an explanation and a way out next to it.
+- **Chips are derived from the greeting**, not hard-coded, so they inherit the
+  property that `chat/prompts.py` builds that list from the registry. They send
+  their label as an ordinary message on the ordinary endpoint.
+- **Accessibility**: keyboard-only end to end, one `:focus-visible` ring never
+  removed, `role="log"` with `aria-live="polite"` and `aria-busy` on the
+  transcript, a real `<label>` for the input, and `prefers-reduced-motion`
+  honoured. Responsive to 360px with no horizontal scroll.
+- **No external request.** System font stack, no CDN, no analytics.
+  `tests/test_ui_build.py` asserts that from Python, against the committed
+  artifact, so it is checked by the suite that always runs.
+
+---
+
 ## Free-tier limits, if you use Gemini
 
 Gemini's free tier allows **20 generate requests per day, per model**. A turn
@@ -403,7 +508,7 @@ was captured there.
 pytest -q
 ```
 
-407 tests, and they need **no API key, no network, and no environment
+411 tests, and they need **no API key, no network, and no environment
 variable** — the model is stubbed, so the whole suite runs from a fresh clone.
 CI runs it on push across Python 3.10 to 3.13.
 
@@ -427,6 +532,16 @@ What they cover:
   shadow the two POST routes.
 - Both providers: request shape, per-task temperature, and every failure mode —
   timeout, refused connection, HTTP error, malformed body, blocked prompt.
+- The committed frontend build: `ui/index.html` references no external URL in
+  any `src`, `href` or `@import`, every reference it does make resolves to a
+  file that is actually there, and no stylesheet pulls a font or image from
+  another host. Deliberately a Python test — `ui/` is the one directory nobody
+  writes by hand, so a CDN slipping in via a dependency would show up only in
+  the bundle, and this is the suite that runs without a toolchain.
+
+The frontend has its own 42 tests under `frontend/` — the hook's send/receive
+cycle, every error path, and that the transcript renders structure without
+changing a character of a figure. Those need Node: `cd frontend && npm test`.
 
 `TEST_VECTORS.md` is worth reading on its own. Every value in it was computed
 from the `SPEC.md` closed form and independently cross-checked by month-by-month
