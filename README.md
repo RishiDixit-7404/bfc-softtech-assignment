@@ -91,15 +91,22 @@ mistakes to notice: `₹5.00` for a five lakh loan reads as a typo, not a bug.
         ▼
   chat/              intent routing, slot-filling state machine, LLM adapter.
         │            Owns the conversation. Knows calculators via a registry.
-        ▼
+        │
+        │            ┌──────────────────────────────────────────────┐
+        ├───────────►│ mcp_tools/   the same calculators as MCP     │
+        │            │              tools over stdio. Optional      │
+        │            │              transport — see below.          │
+        │            └──────────────────┬───────────────────────────┘
+        ▼                               ▼
   calculators/       pure functions. Deterministic. Fully unit-tested.
                      The only place arithmetic exists.
 ```
 
 **The dependency arrow never reverses.** `calculators/` imports nothing from
-`chat/` or `app` — a structural assertion in `tests/test_guards.py`, not a
-convention — so every formula can be read against `SPEC.md` without knowing
-that a chatbot exists.
+`chat/`, `app` or `mcp_tools/` — a structural assertion in
+`tests/test_guards.py`, not a convention — so every formula can be read against
+`SPEC.md` without knowing that a chatbot exists. `mcp_tools/` imports nothing
+from `chat/` or `app` either, for the same reason one layer down.
 
 | File | Holds |
 | --- | --- |
@@ -109,6 +116,8 @@ that a chatbot exists.
 | `chat/router.py` | every call made to a model — classify, extract, answer |
 | `chat/prompts.py` | every word the bot says or sends. Prompt text lives nowhere else |
 | `chat/formatting.py` | the number/text boundary, both directions |
+| `chat/tools.py` | the transport seam: `DirectTools` or `McpTools`, one method each |
+| `mcp_tools/wire.py` | the error boundary — exceptions across a process, structure intact |
 
 Four rules hold the conversation together, and they are what make it a state
 machine rather than a form in disguise:
@@ -235,6 +244,74 @@ arithmetic.
 
 ---
 
+## The calculators as MCP tools
+
+The three calculators are also an **MCP server over stdio**, and the bot can
+reach them either way:
+
+```bash
+python -m mcp_tools.server                 # the server, on its own
+
+CALCULATOR_TRANSPORT=mcp python app.py     # the bot, calling it as tools
+```
+
+`direct` is the default and calls the Python functions in process. `mcp` starts
+`mcp_tools.server` as a child process and calls the same functions as tools
+over JSON-RPC. **The answers are identical objects, not merely equal numbers** —
+`pytest -q` passes in both modes and CI runs the whole matrix twice, once per
+transport, so that stays true rather than having been true once.
+
+`calculators/` did not change to make this work; `git diff main -- calculators/`
+is empty for the entire phase. The adapter is thin by construction, and a guard
+test asserts it calls `CALCULATORS[name].function` rather than naming any
+calculator directly.
+
+```
+  chat/tools.py        DirectTools | McpTools — one method, two transports
+        │
+        ▼
+  chat/mcp_client.py   synchronous stdio client. Spawns once, reused.
+        │  JSON-RPC 2.0, one object per line
+        ▼
+  mcp_tools/           schemas, the wire boundary, the server loop.
+        │              Imports calculators/ and the standard library. Nothing else.
+        ▼
+  calculators/         unchanged
+```
+
+**Tool schemas state units and bounds**, because the caller is not assumed to
+be this chatbot: every parameter carries its units (`INR`, `percent per year`,
+`years`), its range taken from `calculators/validation.py`'s own constants
+rather than restated, and the two things an outsider gets wrong — that `9` means
+9% a year and not `0.09`, and that periods are in years while several outputs
+are in months. The SIP tool also carries D2's warning that the specified formula
+is not a standard annuity-due solve.
+
+**The interesting part is the error boundary.** `chat/formatting.py` does not
+render `str(exc)`; it reads `EmiTooLowError.minimum_emi`, `.monthly_interest`
+and `.principal` at full precision and formats them into Indian grouping at the
+presentation boundary. Flattening the exception to a string across a pipe would
+take all of that away and still look like it worked. So the wire carries the
+structure and the client rebuilds the exception as the class it was:
+
+```
+$ … tools/call loan_tenure {principal: 500000, emi: 3000, annual_rate_pct: 9.0}
+
+  "structuredContent": {"ok": false, "error": {
+      "type": "EmiTooLowError",
+      "data": {"principal": 500000.0, "emi": 3000.0,
+               "monthly_interest": 3603.6616580683576,
+               "minimum_emi":      3603.6616580683576}}}
+```
+
+which arrives on the far side as an `EmiTooLowError` that passes every
+`isinstance` check, carries all four floats undamaged, and renders the same
+sentence the direct path renders — asserted by a test that compares the two.
+`chat/session.py` changed by one line for the whole phase, and
+`chat/formatting.py` by none. See `DECISIONS.md` D24–D26.
+
+---
+
 ## Free-tier limits, if you use Gemini
 
 Gemini's free tier allows **20 generate requests per day, per model**. A turn
@@ -295,7 +372,7 @@ See `DECISIONS.md` D1.
 pytest -q
 ```
 
-350 tests, and they need **no API key, no network, and no environment
+407 tests, and they need **no API key, no network, and no environment
 variable** — the model is stubbed, so the whole suite runs from a fresh clone.
 CI runs it on push across Python 3.10 to 3.13.
 

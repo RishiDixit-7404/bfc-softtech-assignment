@@ -501,3 +501,138 @@ That is fixed by labelling and ordering, not by hiding.
 `total_withdrawn` second, the latter named as the figure the formula reports
 and the corpus cannot fund. Suppression is now reserved for numbers that are
 misleading in themselves rather than merely in need of context.
+
+---
+
+## D24 — The MCP server is hand-written, not the official SDK
+
+Phase 6 exposes the calculators as MCP tools over stdio. The `mcp` package is
+the reference implementation and would be the obvious dependency.
+
+Two things argued against it here. It is **async throughout** — anyio,
+`async with` client sessions — and `chat/session.py` is a synchronous state
+machine called from a synchronous FastAPI handler. Bridging would mean an event
+loop threaded through the session, or an `asyncio.run` per call, to overlap a
+millisecond of arithmetic behind a pipe with nothing. And it arrives with a
+dozen transitive dependencies — pydantic, starlette, uvicorn, jsonschema,
+opentelemetry, pyjwt[crypto] — for a submission whose `requirements.txt` is
+four lines and whose D17 already chose `urllib` over two vendor SDKs on exactly
+this reasoning.
+
+**Decision:** implement the slice of MCP this needs, in the standard library.
+JSON-RPC 2.0, newline-delimited JSON over stdin and stdout, and four methods:
+`initialize`, `notifications/initialized`, `tools/list`, `tools/call`. About
+150 lines of server and 180 of client, all of it readable in one sitting and
+testable in-process against `server.handle`.
+
+What is **not** implemented is listed in the server's docstring rather than
+left to be discovered: resources, prompts, sampling, completion, progress,
+cancellation, and both HTTP transports. This is a tool server. Claiming
+otherwise would be the actual failure.
+
+**What would change this:** needing any of that list, or needing to *be* an MCP
+client of servers written by other people. Speaking a protocol to one known
+peer is a much smaller problem than speaking it to all of them, and the SDK is
+the right answer to the larger one.
+
+---
+
+## D25 — Structured errors cross the boundary as exceptions, not strings
+
+This is the real design problem in Phase 6, and it is worth stating precisely
+before the solution.
+
+`chat/formatting.py` does not render `str(exc)`. It reads attributes:
+`EmiTooLowError.minimum_emi`, `.monthly_interest`, `.principal` — three floats
+at full precision, formatted into Indian grouping at the presentation boundary
+where D10 says formatting belongs. `InvalidAmountError.minimum_inclusive`
+decides which of two sentences a user sees. And `chat/session.py` branches on
+class: `InfeasibleScenarioError` lands in `AWAITING_EDIT` holding every other
+slot, while `ValidationError` drops one slot and re-asks it.
+
+Flatten that to a message string across the process boundary and all of it
+goes at once. The rupee figures arrive pre-formatted in the wrong grouping, the
+minimum-EMI recovery has no number to show, and every failure collapses into
+one generic branch. The chatbot would still *work*, which is what makes it the
+tempting mistake.
+
+**Decision:** the wire carries the structure, and the client rebuilds the
+exception on the far side.
+
+```json
+{"type": "EmiTooLowError", "message": "...",
+ "data": {"principal": 500000.0, "emi": 3000.0,
+          "monthly_interest": 3603.6616580683576,
+          "minimum_emi": 3603.6616580683576}}
+```
+
+Reconstruction is `cls(message, **data)`, which works for every one of them
+because every `CalculatorError` subclass takes `(message, **fields)` and stores
+each field under its own name — making `vars(exc)` the exact inverse of the
+constructor. That property is load-bearing and is therefore asserted, not
+assumed: `tests/test_mcp.py` round-trips an instance of every subclass and
+compares `vars()`, and a separate test fails if a subclass exists that the
+round-trip list does not cover. A new error type added to `calculators/errors.py`
+breaks that test rather than breaking a user's error message.
+
+The class is looked up by walking `CalculatorError.__subclasses__()`. Two
+consequences: a new error type is transportable the moment it is defined, and
+nothing outside that tree can be instantiated from wire data no matter what the
+payload claims.
+
+Results cross the same way — class name plus `dataclasses.asdict`. `json`
+round-trips a float through its shortest repr, so the rebuilt `LoanTenure` is
+*equal* to the direct one rather than close to it, and the test asserts `==`
+rather than `approx` deliberately.
+
+Consequences worth stating:
+
+- `calculators/` did not change. `git diff main -- calculators/` is empty for
+  the whole phase. The adapter reads the exceptions; it does not ask them to
+  learn how to serialise themselves.
+- `chat/formatting.py` did not change either, and `chat/session.py` changed by
+  one line: `spec.function(**self.slots)` became `self.tools.invoke(...)`. The
+  `except` clauses below it are untouched, because on both transports they are
+  catching the same classes.
+- MCP's own distinction does the rest of the work. A calculator refusing a
+  scenario is `isError: true` on a successful call — the request was well
+  formed and the answer is that it cannot be done. JSON-RPC errors are kept for
+  an unknown method, an unknown tool, or arguments that are not an object.
+
+**The one thing the chat layer did learn.** A transport failure is not a
+`CalculatorError` and must not pretend to be one: the numbers were never in
+question, the pipe was. `ToolTransportError` gets its own sentence, in
+`chat/prompts.py`, in the same shape as D18's four provider failures — what
+went wrong, and that nothing collected is lost. The session stays in
+`CONFIRMING`, so "yes" retries. Mapping it onto a calculator error to avoid the
+new branch would have meant telling someone their EMI was invalid because a
+subprocess died.
+
+---
+
+## D26 — Tool descriptions live in `mcp_tools/schemas.py`, not `chat/prompts.py`
+
+`CLAUDE.md` §3 puts all prompt text in one file: "an f-string containing
+instructions to a model, located anywhere else, is a bug." MCP tool
+descriptions are read by models. The rule deserves an answer rather than a
+quiet exception.
+
+**Decision:** they stay in `schemas.py`, because they are an API contract and
+not conversational copy. The distinction that matters is the audience: every
+string in `chat/prompts.py` is addressed to *the* model this bot talks to, and
+changing one changes how the bot behaves. A tool schema is addressed to any
+caller — the `tools/list` output is equally meant for a person reading it, a
+script, or a different model entirely — and it describes what the function
+does, not how anyone should act.
+
+Held to that line, the descriptions state units, bounds, the closed form, and
+the two things an outside caller would otherwise get wrong: that rates are
+percentages as written (`9`, not `0.09`) and that periods are in years while
+several outputs are in months. The SIP tool also carries D2's warning that the
+specified formula is not a standard annuity-due solve, since a careful caller
+would otherwise read the result as a bug.
+
+No string in that file instructs a model to behave in any way, and a test
+asserts the bounds are taken from `calculators/validation.py`'s constants
+rather than restated — a schema promising a range the validator will reject is
+worse than no schema, because it invites the call that fails.
