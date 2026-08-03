@@ -1,7 +1,5 @@
 # Finance chatbot with interactive calculators
 
-[![tests](https://github.com/RishiDixit-7404/bfc-softtech-assignment/actions/workflows/tests.yml/badge.svg)](https://github.com/RishiDixit-7404/bfc-softtech-assignment/actions/workflows/tests.yml)
-
 A chatbot that talks about personal finance and runs three calculators — loan
 tenure, SIP for a target amount, and SWP — collecting their inputs one question
 at a time rather than presenting a form. The language model classifies intent,
@@ -31,7 +29,7 @@ The frontend is a Vite + React app, and its **build output is committed** to
 `ui/` precisely so that the block above is the whole story — `app.py` serves
 that directory and there is no toolchain in the way. The sources are in
 `frontend/` and you only need them to *change* the interface. See *Frontend*
-below and `DECISIONS.md` D27.
+below.
 
 `set -a` marks every subsequent assignment for export, so sourcing the file is
 enough; `set +a` puts the shell back. The obvious
@@ -61,7 +59,7 @@ the target by exactly `(1+r)²` — ₹19,067.62 of unnecessary saving against a
 ₹10,00,000 goal. It is **implemented verbatim**, because it is the client's
 stated requirement, and two tests pin it: one asserts the spec value, one
 asserts the ratio against the annuity-due value to prove the deviation was
-understood rather than transcribed. See `DECISIONS.md` D2.
+understood rather than transcribed.
 
 **The spec asks for three calculators and two calculators.** The intro promises
 a bot that calculates loan tenure, SIP and SWP and requires it to say so on
@@ -69,7 +67,6 @@ start-up; the note under *Behavior* says "integrate any two". A two-calculator
 build would make the mandated start-up message advertise something that does
 not exist. **All three are implemented** — the marginal cost is one pure
 function each, and `TEST_VECTORS.md` supplies verified vectors for all of them.
-See `DECISIONS.md` D1.
 
 ---
 
@@ -300,8 +297,7 @@ CALCULATOR_TRANSPORT=mcp python app.py     # the bot, calling it as tools
 `direct` is the default and calls the Python functions in process. `mcp` starts
 `mcp_tools.server` as a child process and calls the same functions as tools
 over JSON-RPC. **The answers are identical objects, not merely equal numbers** —
-`pytest -q` passes in both modes and CI runs the whole matrix twice, once per
-transport, so that stays true rather than having been true once.
+`pytest -q` passes in both modes; run it each way before trusting either.
 
 `calculators/` did not change to make this work — `git diff bcd3cd2~1..a715868
 -- calculators/` over the five commits that added all of it is empty. The
@@ -350,7 +346,7 @@ which arrives on the far side as an `EmiTooLowError` that passes every
 `isinstance` check, carries all four floats undamaged, and renders the same
 sentence the direct path renders — asserted by a test that compares the two.
 `chat/session.py` changed by one line for the whole phase, and
-`chat/formatting.py` by none. See `DECISIONS.md` D24–D26.
+`chat/formatting.py` by none.
 
 ### What this is not
 
@@ -398,7 +394,7 @@ reviewer's path has to be `pip install && python app.py`, and ignoring `ui/`
 would turn a Python submission into one that needs a Node toolchain to show its
 own page. It also means this entire phase changed no Python at all — `app.py`
 already mounted `ui/` and was never touched. The full argument, and the costs
-accepted, are in `DECISIONS.md` D27.
+accepted, are set out under *Why the build output is committed* below.
 
 ### What the frontend is not allowed to do
 
@@ -418,7 +414,7 @@ and a leading `"- "` — and no digit, `₹` or percent sign anywhere. Every str
 it emits is a substring of the string it was given. Three tests hold that line:
 two compare the emitted fragments against the input, and one extracts every
 `[₹0-9.,%&]` character from the rendered DOM and requires it to be identical to
-the reply. `DECISIONS.md` D28.
+the reply.
 
 The API contract is unchanged for the same reason: `POST /session` and
 `POST /chat` still return `{session_id, reply}` with `reply` a plain string. A
@@ -483,20 +479,20 @@ was captured there.
 
 | Case | Behaviour | Detail |
 | --- | --- | --- |
-| EMI ≤ monthly interest | `EmiTooLowError`. The bot names the bound (₹3,603.66 on a ₹5,00,000 loan at 9%) **and** a whole rupee that clears it (₹3,604), keeping every other value so one edit rescues the scenario | `DECISIONS.md` D7 |
-| Boundary `E == P·r` | Rejected too — an EMI equal to the interest holds the balance flat forever | D7 |
-| SWP corpus runs dry | Depletion month found **by simulation**, never by inverting the formula. The negative balance and the spec's profit line are suppressed and `actual_withdrawn` is reported; the spec's `W × n` still appears beside it, labelled as the figure the corpus cannot fund | D6, D15 |
-| Calculator changed mid-flow | Offered, not taken. Every collected value is held until the switch is confirmed, and a no resumes the outstanding question | D21 |
-| `R = 0` loan | `log(1+0)` is 0, so the closed form divides by zero. Degenerates to `n = P/E` | D8 |
-| `R = 0` SIP | `(1+r)^n − 1` is 0. Degenerates to `Target / (n·12)` | D8 |
-| `R = 0` SWP | `((1+r)^n − 1)/r` is 0/0. Degenerates to `FV = P − W·n`, and profit is then exactly `0.0` for any input — asserted as an invariant | D8 |
-| Correction mid-flow | Slot overwritten, values re-confirmed. Never restarts | D13 |
-| Digression mid-flow | Answered, then the pending question is re-posed. State, slots and pending slot unchanged | D13 |
+| EMI ≤ monthly interest | `EmiTooLowError`. The bot names the bound (₹3,603.66 on a ₹5,00,000 loan at 9%) **and** a whole rupee that clears it (₹3,604), keeping every other value so one edit rescues the scenario | `calculators/errors.py` |
+| Boundary `E == P·r` | Rejected too — an EMI equal to the interest holds the balance flat forever | `calculators/errors.py` |
+| SWP corpus runs dry | Depletion month found **by simulation**, never by inverting the formula. The negative balance and the spec's profit line are suppressed and `actual_withdrawn` is reported; the spec's `W × n` still appears beside it, labelled as the figure the corpus cannot fund | `calculators/swp.py` |
+| Calculator changed mid-flow | Offered, not taken. Every collected value is held until the switch is confirmed, and a no resumes the outstanding question | `chat/session.py` |
+| `R = 0` loan | `log(1+0)` is 0, so the closed form divides by zero. Degenerates to `n = P/E` | `calculators/rates.py` |
+| `R = 0` SIP | `(1+r)^n − 1` is 0. Degenerates to `Target / (n·12)` | `calculators/rates.py` |
+| `R = 0` SWP | `((1+r)^n − 1)/r` is 0/0. Degenerates to `FV = P − W·n`, and profit is then exactly `0.0` for any input — asserted as an invariant | `calculators/rates.py` |
+| Correction mid-flow | Slot overwritten, values re-confirmed. Never restarts | `chat/session.py` |
+| Digression mid-flow | Answered, then the pending question is re-posed. State, slots and pending slot unchanged | `chat/session.py` |
 | Injection attempt | Classified off-topic. The system prompt is never disclosed, and instructions inside user input are data | `chat/prompts.py` |
-| Unreadable value | Slot left unfilled and asked again. The model's number is never trusted over Python's | D12 |
-| Truncated span from the model | `"5"` out of `"5,00,000"` is refused on the same grounds as an outright fabrication | D12, D22 |
-| Withdrawal as a percentage | Resolved through the same function as the rupee path, and the resolved figure is echoed before computing | D5 |
-| Model down, slow, babbling, or unconfigured | Four distinct plain sentences. No traceback, no HTTP status, no provider JSON reaches the user, and no collected value is lost | D18 |
+| Unreadable value | Slot left unfilled and asked again. The model's number is never trusted over Python's | `chat/router.py` |
+| Truncated span from the model | `"5"` out of `"5,00,000"` is refused on the same grounds as an outright fabrication | `chat/router.py` |
+| Withdrawal as a percentage | Resolved through the same function as the rupee path, and the resolved figure is echoed before computing | `calculators/swp.py` |
+| Model down, slow, babbling, or unconfigured | Four distinct plain sentences. No traceback, no HTTP status, no provider JSON reaches the user, and no collected value is lost | `chat/llm.py` |
 
 ---
 
@@ -510,7 +506,7 @@ pytest -q
 
 411 tests, and they need **no API key, no network, and no environment
 variable** — the model is stubbed, so the whole suite runs from a fresh clone.
-CI runs it on push across Python 3.10 to 3.13.
+Tested on Python 3.10 through 3.13.
 
 What they cover:
 

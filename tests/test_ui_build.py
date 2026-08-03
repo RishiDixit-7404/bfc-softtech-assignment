@@ -1,8 +1,7 @@
 """The committed frontend build, checked from the Python side.
 
-``ui/`` is build output that is committed on purpose (``DECISIONS.md`` D27), so
-it is the one directory in this repository whose contents nobody writes by
-hand. That makes it exactly the place where an accidental CDN reference would
+``ui/`` is build output that is committed on purpose - see the README - so it
+is the one directory in this repository whose contents nobody writes by hand. That makes it exactly the place where an accidental CDN reference would
 survive review: a reviewer reads ``frontend/src``, and a font link pulled in by
 a dependency appears only in the bundle.
 
@@ -56,7 +55,7 @@ def _off_origin(candidates: list[str]) -> list[str]:
 
 
 def test_the_frontend_build_is_committed():
-    """Python alone must be enough to serve the page. D27."""
+    """Python alone must be enough to serve the page."""
     assert INDEX.is_file(), "ui/index.html is missing - run: cd frontend && npm run build"
     assert list(UI.rglob("*.js")), "ui/ has no bundle - the build did not run"
 

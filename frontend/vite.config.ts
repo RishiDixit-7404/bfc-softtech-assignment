@@ -12,7 +12,8 @@ export default defineConfig({
   build: {
     // The whole point of this config. app.py already serves ../ui and is not
     // touched by this phase; the build writes there and the output is
-    // committed, so a reviewer needs Python and nothing else. See D27.
+    // committed, so a reviewer needs Python and nothing else - see the
+    // README's "Why the build output is committed".
     outDir: "../ui",
     emptyOutDir: true,
     // No external host at runtime, so nothing may be left to fetch later.

@@ -1,5 +1,5 @@
 # Node's own artifacts. The build *output* is not here - it lands in ../ui and
-# is committed on purpose, so a reviewer needs Python and no toolchain. See D27.
+# is committed on purpose, so a reviewer needs Python and no toolchain.
 node_modules/
 .vite/
 node_modules/.vite/
