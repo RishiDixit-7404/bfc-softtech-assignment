@@ -4,8 +4,10 @@ notes/
 scratch/
 
 # --- Secrets ---
-.env
-.env.local
+# Prefix match, not exact: .env.local, .env.backup and .envgit are all the
+# same mistake waiting to happen, and only .env.example is safe to track.
+.env*
+!.env.example
 *.key
 
 # --- Python ---
