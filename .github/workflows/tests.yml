@@ -12,6 +12,10 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
+        # Both transports, every version. The claim is that the MCP path and
+        # the direct path produce the same answers; a matrix is how that stays
+        # true rather than how it was true once.
+        transport: [direct, mcp]
 
     steps:
       - uses: actions/checkout@v4
@@ -29,3 +33,5 @@ jobs:
       # guards (one monthly_rate definition, no naive R/12, no upward import
       # from calculators/) are pytest assertions too - see tests/test_guards.py.
       - run: pytest -q
+        env:
+          CALCULATOR_TRANSPORT: ${{ matrix.transport }}

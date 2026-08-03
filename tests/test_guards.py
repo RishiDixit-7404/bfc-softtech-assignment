@@ -114,6 +114,36 @@ def test_G3_calculators_never_import_the_layers_above_them():
     assert offenders == []
 
 
+def test_G3_the_mcp_adapter_sits_below_the_chat_layer_too():
+    """chat -> mcp_tools -> calculators, and never the other way.
+
+    The MCP server must be runnable, and readable, by someone who has never
+    heard of this chatbot - it is a tool server for the calculators, not a
+    piece of the conversation.
+    """
+    forbidden = re.compile(r"^\s*(?:from|import)\s+(chat|app)\b", re.MULTILINE)
+    offenders = [
+        str(path.relative_to(ROOT))
+        for path in _source_files(ROOT / "mcp_tools")
+        if forbidden.search(path.read_text())
+    ]
+
+    assert offenders == []
+
+
+def test_G3_the_mcp_adapter_does_not_reshape_the_calculators():
+    """It calls the registry's functions. It does not wrap or re-derive them.
+
+    An adapter that needed a calculator to change shape would be the wrong
+    adapter, so the only thing it may do with one is call it.
+    """
+    source = (ROOT / "mcp_tools" / "server.py").read_text()
+
+    assert "CALCULATORS[name].function(**arguments)" in source
+    for spec in CALCULATORS.values():
+        assert spec.function.__name__ not in source, spec.id
+
+
 INVALID_CALLS = [
     (loan_tenure, (0, 10_000, 9.0)),
     (loan_tenure, (500_000, 0, 9.0)),
